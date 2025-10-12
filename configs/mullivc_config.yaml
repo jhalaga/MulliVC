@@ -1,0 +1,88 @@
+# Configuration pour MulliVC
+data:
+  # Chemins des datasets
+  libritts_path: "data/libritts"
+  fongbe_path: "data/fongbe"
+  
+  # Paramètres audio
+  sample_rate: 22050
+  hop_length: 256
+  win_length: 1024
+  n_mel_channels: 80
+  mel_fmin: 0
+  mel_fmax: 8000
+  
+  # Paramètres de preprocessing
+  max_audio_length: 10.0  # secondes
+  min_audio_length: 1.0   # secondes
+  
+  # Batch size et dataloader
+  batch_size: 8
+  num_workers: 4
+  pin_memory: true
+
+model:
+  # Content Encoder
+  content_encoder:
+    model_name: "microsoft/wavlm-base"
+    hidden_size: 768
+    output_dim: 256
+  
+  # Timbre Encoder
+  timbre_encoder:
+    input_dim: 80  # mel channels
+    hidden_dim: 256
+    output_dim: 256
+    num_layers: 4
+  
+  # Fine-grained Timbre Conformer
+  conformer:
+    input_dim: 256
+    num_heads: 8
+    num_layers: 6
+    conv_kernel_size: 31
+    dropout: 0.1
+  
+  # Mel Decoder
+  mel_decoder:
+    input_dim: 512  # content + timbre
+    hidden_dim: 512
+    output_dim: 80
+    num_layers: 4
+  
+  # Discriminateur
+  discriminator:
+    input_dim: 80
+    hidden_dim: 512
+    num_layers: 4
+    patch_size: 16
+
+training:
+  # Hyperparamètres
+  learning_rate: 1e-4
+  beta1: 0.5
+  beta2: 0.999
+  weight_decay: 1e-6
+  
+  # Poids des pertes
+  lambda_adv: 0.05
+  lambda_rec: 1.0
+  lambda_timbre: 0.1
+  lambda_pitch: 1.0
+  lambda_asr: 0.5
+  
+  # Entraînement
+  num_epochs: 100
+  steps_per_epoch: 1000
+  save_interval: 10
+  log_interval: 100
+  
+  # Optimiseurs
+  lr_scheduler: "cosine"
+  warmup_steps: 1000
+
+# Chemins
+paths:
+  checkpoint_dir: "checkpoints"
+  log_dir: "logs"
+  eval_dir: "evaluation"

@@ -1,0 +1,38 @@
+# Configuration pour Weights & Biases
+wandb:
+  enabled: true
+  project: "mullivc"
+  name: "mullivc-experiment"
+  tags: ["voice-conversion", "multilingual", "cross-lingual"]
+  notes: "Entraînement du modèle MulliVC pour la conversion vocale multilingue"
+  
+  # Métriques à suivre
+  metrics:
+    - "train/total_loss"
+    - "train/reconstruction_loss"
+    - "train/timbre_loss"
+    - "train/pitch_loss"
+    - "train/asr_loss"
+    - "train/adversarial_loss"
+    - "val/total_loss"
+    - "val/reconstruction_loss"
+    - "val/timbre_loss"
+    - "val/pitch_loss"
+    - "val/asr_loss"
+    - "val/adversarial_loss"
+    - "learning_rate"
+    - "epoch"
+  
+  # Paramètres à loguer
+  log_params:
+    - "data.batch_size"
+    - "data.sample_rate"
+    - "model.content_encoder.hidden_size"
+    - "model.timbre_encoder.hidden_dim"
+    - "model.conformer.num_layers"
+    - "training.learning_rate"
+    - "training.lambda_adv"
+    - "training.lambda_rec"
+    - "training.lambda_timbre"
+    - "training.lambda_pitch"
+    - "training.lambda_asr"
