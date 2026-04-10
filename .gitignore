@@ -1,1 +1,5 @@
 /2408.04708v1.pdf
+
+.venv
+.vscode
+__pycache__

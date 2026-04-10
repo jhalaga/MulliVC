@@ -1,5 +1,5 @@
 """
-Script d'inférence pour MulliVC
+Inference script for MulliVC
 """
 import torch
 import torchaudio
@@ -15,13 +15,13 @@ from utils.data_utils import load_config
 
 
 class MulliVCInference:
-    """Pipeline d'inférence pour MulliVC"""
+    """Inference pipeline for MulliVC."""
     
     def __init__(self, config_path: str, checkpoint_path: str):
         self.config = load_config(config_path)
         self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
         
-        # Charger le modèle
+        # Load the model
         self.model = create_mullivc_model(config_path).to(self.device)
         self.model.load_checkpoint(checkpoint_path)
         self.model.eval()
@@ -29,36 +29,36 @@ class MulliVCInference:
         # Audio processor
         self.audio_processor = AudioProcessor(self.config)
         
-        # Charger le vocoder HiFi-GAN (placeholder)
+        # Load the HiFi-GAN vocoder (placeholder)
         self.vocoder = self._load_vocoder()
     
     def _load_vocoder(self):
-        """Charge le vocoder HiFi-GAN"""
-        # Placeholder - à implémenter avec le vrai HiFi-GAN
+        """Loads the HiFi-GAN vocoder."""
+        # Placeholder - to be implemented with the real HiFi-GAN
         print("Attention: Vocoder HiFi-GAN non implémenté, utilisation d'un placeholder")
         return None
     
     def load_audio(self, audio_path: str) -> torch.Tensor:
-        """Charge un fichier audio"""
+        """Loads an audio file."""
         audio, sr = torchaudio.load(audio_path)
         
-        # Resample si nécessaire
+        # Resample if needed
         if sr != self.config['data']['sample_rate']:
             resampler = torchaudio.transforms.Resample(sr, self.config['data']['sample_rate'])
             audio = resampler(audio)
         
-        # Convertir en mono si stéréo
+        # Convert to mono if stereo
         if audio.shape[0] > 1:
             audio = audio.mean(dim=0, keepdim=True)
         
         return audio.squeeze(0)  # (samples,)
     
     def preprocess_audio(self, audio: torch.Tensor) -> torch.Tensor:
-        """Préprocesse l'audio"""
-        # Normaliser
+        """Preprocesses audio."""
+        # Normalize
         audio = audio / (torch.abs(audio).max() + 1e-8)
         
-        # Trimmer le silence
+        # Trim silence
         audio = self.audio_processor._trim_silence(audio)
         
         return audio
@@ -71,60 +71,60 @@ class MulliVCInference:
         target_speaker_id: Optional[str] = None
     ) -> str:
         """
-        Convertit la voix d'un audio source vers le timbre d'un locuteur cible
-        
+        Converts a source voice to the timbre of a target speaker.
+
         Args:
-            source_audio_path: Chemin vers l'audio source
-            target_speaker_audio_path: Chemin vers l'audio du locuteur cible
-            output_path: Chemin de sortie pour l'audio converti
-            target_speaker_id: ID du locuteur cible (optionnel)
-            
+            source_audio_path: Path to the source audio.
+            target_speaker_audio_path: Path to the target speaker audio.
+            output_path: Output path for the converted audio.
+            target_speaker_id: Target speaker ID, if available.
+
         Returns:
-            output_path: Chemin vers l'audio converti
+            output_path: Path to the converted audio.
         """
-        # Charger les audios
+        # Load audio
         source_audio = self.load_audio(source_audio_path)
         target_speaker_audio = self.load_audio(target_speaker_audio_path)
         
-        # Préprocesser
+        # Preprocess
         source_audio = self.preprocess_audio(source_audio)
         target_speaker_audio = self.preprocess_audio(target_speaker_audio)
         
-        # Ajouter dimension batch
+        # Add batch dimension
         source_audio = source_audio.unsqueeze(0)  # (1, samples)
         target_speaker_audio = target_speaker_audio.unsqueeze(0)  # (1, samples)
         
-        # Conversion
+        # Convert
         with torch.no_grad():
             generated_mel = self.model.inference(source_audio, target_speaker_audio)
         
-        # Convertir le mél-spectrogramme en audio
+        # Convert the mel spectrogram to audio
         generated_audio = self._mel_to_audio(generated_mel)
         
-        # Sauvegarder
+        # Save
         self._save_audio(generated_audio, output_path)
         
         return output_path
     
     def _mel_to_audio(self, mel_spec: torch.Tensor) -> torch.Tensor:
-        """Convertit le mél-spectrogramme en audio"""
+        """Converts a mel spectrogram to audio."""
         if self.vocoder is not None:
-            # Utiliser le vrai vocoder HiFi-GAN
+            # Use the real HiFi-GAN vocoder
             with torch.no_grad():
                 audio = self.vocoder(mel_spec)
         else:
-            # Utiliser l'approximation simple
+            # Use the simple approximation
             audio = self.audio_processor.mel_to_audio(mel_spec.squeeze(0))
             audio = audio.unsqueeze(0)  # (1, samples)
         
         return audio
     
     def _save_audio(self, audio: torch.Tensor, output_path: str):
-        """Sauvegarde l'audio"""
-        # Créer le dossier de sortie si nécessaire
+        """Saves audio."""
+        # Create the output directory if needed
         os.makedirs(os.path.dirname(output_path), exist_ok=True)
         
-        # Sauvegarder
+        # Save
         torchaudio.save(
             output_path,
             audio.cpu(),
@@ -138,24 +138,24 @@ class MulliVCInference:
         output_dir: str
     ) -> list:
         """
-        Convertit plusieurs audios en batch
-        
+        Converts multiple audio files in a batch.
+
         Args:
-            source_audio_paths: Liste des chemins vers les audios sources
-            target_speaker_audio_path: Chemin vers l'audio du locuteur cible
-            output_dir: Dossier de sortie
-            
+            source_audio_paths: List of source audio paths.
+            target_speaker_audio_path: Path to the target speaker audio.
+            output_dir: Output directory.
+
         Returns:
-            output_paths: Liste des chemins vers les audios convertis
+            output_paths: List of converted audio paths.
         """
         output_paths = []
         
         for i, source_path in enumerate(source_audio_paths):
-            # Nom de fichier de sortie
+            # Output file name
             source_name = os.path.splitext(os.path.basename(source_path))[0]
             output_path = os.path.join(output_dir, f"{source_name}_converted.wav")
             
-            # Conversion
+            # Convert
             try:
                 self.convert_voice(source_path, target_speaker_audio_path, output_path)
                 output_paths.append(output_path)
@@ -174,21 +174,21 @@ class MulliVCInference:
         target_language: str = "fongbe"
     ) -> str:
         """
-        Conversion cross-linguale
-        
+        Performs cross-lingual conversion.
+
         Args:
-            source_audio_path: Chemin vers l'audio source
-            target_speaker_audio_path: Chemin vers l'audio du locuteur cible
-            output_path: Chemin de sortie
-            source_language: Langue source
-            target_language: Langue cible
-            
+            source_audio_path: Path to the source audio.
+            target_speaker_audio_path: Path to the target speaker audio.
+            output_path: Output path.
+            source_language: Source language.
+            target_language: Target language.
+
         Returns:
-            output_path: Chemin vers l'audio converti
+            output_path: Path to the converted audio.
         """
         print(f"Conversion cross-linguale: {source_language} -> {target_language}")
         
-        # Utiliser la conversion standard
+        # Use standard conversion
         return self.convert_voice(
             source_audio_path,
             target_speaker_audio_path,
@@ -202,53 +202,53 @@ class MulliVCInference:
         converted_audio_path: str
     ) -> dict:
         """
-        Évalue la qualité de la conversion
-        
+        Evaluates conversion quality.
+
         Args:
-            source_audio_path: Chemin vers l'audio source
-            target_speaker_audio_path: Chemin vers l'audio du locuteur cible
-            converted_audio_path: Chemin vers l'audio converti
-            
+            source_audio_path: Path to the source audio.
+            target_speaker_audio_path: Path to the target speaker audio.
+            converted_audio_path: Path to the converted audio.
+
         Returns:
-            metrics: Dictionnaire des métriques d'évaluation
+            metrics: Dictionary of evaluation metrics.
         """
-        # Charger les audios
+        # Load audio
         source_audio = self.load_audio(source_audio_path)
         target_audio = self.load_audio(target_speaker_audio_path)
         converted_audio = self.load_audio(converted_audio_path)
         
-        # Calculer les métriques
+        # Compute metrics
         metrics = {}
         
-        # Similarité du locuteur (placeholder)
+        # Speaker similarity (placeholder)
         metrics['speaker_similarity'] = self._compute_speaker_similarity(
             converted_audio, target_audio
         )
         
-        # Préservation du contenu (placeholder)
+        # Content preservation (placeholder)
         metrics['content_preservation'] = self._compute_content_preservation(
             source_audio, converted_audio
         )
         
-        # Qualité audio (placeholder)
+        # Audio quality (placeholder)
         metrics['audio_quality'] = self._compute_audio_quality(converted_audio)
         
         return metrics
     
     def _compute_speaker_similarity(self, audio1: torch.Tensor, audio2: torch.Tensor) -> float:
-        """Calcule la similarité du locuteur entre deux audios"""
-        # Placeholder - à implémenter avec un modèle de vérification vocale
-        return 0.8  # Valeur simulée
+        """Computes speaker similarity between two audio samples."""
+        # Placeholder - to be implemented with a speaker verification model
+        return 0.8  # Simulated value
     
     def _compute_content_preservation(self, source: torch.Tensor, converted: torch.Tensor) -> float:
-        """Calcule la préservation du contenu"""
-        # Placeholder - à implémenter avec un modèle ASR
-        return 0.9  # Valeur simulée
+        """Computes content preservation."""
+        # Placeholder - to be implemented with an ASR model
+        return 0.9  # Simulated value
     
     def _compute_audio_quality(self, audio: torch.Tensor) -> float:
-        """Calcule la qualité audio"""
-        # Placeholder - à implémenter avec des métriques objectives
-        return 0.85  # Valeur simulée
+        """Computes audio quality."""
+        # Placeholder - to be implemented with objective metrics
+        return 0.85  # Simulated value
 
 
 def main():
@@ -272,7 +272,7 @@ def main():
     
     args = parser.parse_args()
     
-    # Créer l'inférence
+    # Create the inference pipeline
     inference = MulliVCInference(args.config, args.checkpoint)
     
     # Conversion
@@ -293,7 +293,7 @@ def main():
     
     print(f"Conversion terminée: {output_path}")
     
-    # Évaluation si demandée
+    # Evaluate if requested
     if args.evaluate:
         metrics = inference.evaluate_conversion(
             args.source_audio,

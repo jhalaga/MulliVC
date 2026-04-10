@@ -1,5 +1,5 @@
 """
-Métriques d'évaluation pour MulliVC
+Evaluation metrics for MulliVC.
 """
 import torch
 import torch.nn as nn
@@ -15,7 +15,7 @@ from speechbrain.pretrained import EncoderClassifier
 
 
 class SpeakerSimilarityMetric:
-    """Métrique de similarité du locuteur"""
+    """Speaker similarity metric."""
     
     def __init__(self, model_name: str = "speechbrain/spkrec-ecapa-voxceleb"):
         self.classifier = EncoderClassifier.from_hparams(
@@ -30,37 +30,37 @@ class SpeakerSimilarityMetric:
         sample_rate: int = 16000
     ) -> float:
         """
-        Calcule la similarité du locuteur entre deux audios
-        
+        Computes speaker similarity between two audio samples.
+
         Args:
-            audio1: Premier audio (samples,)
-            audio2: Deuxième audio (samples,)
-            sample_rate: Fréquence d'échantillonnage
-            
+            audio1: First audio sample of shape (samples,).
+            audio2: Second audio sample of shape (samples,).
+            sample_rate: Sampling rate.
+
         Returns:
-            similarity: Score de similarité (0-1)
+            similarity: Similarity score in the range [0, 1].
         """
-        # Resample si nécessaire
+        # Resample if needed
         if sample_rate != 16000:
             audio1 = self._resample_audio(audio1, sample_rate, 16000)
             audio2 = self._resample_audio(audio2, sample_rate, 16000)
         
-        # Extraire les embeddings
+        # Extract embeddings
         with torch.no_grad():
             embedding1 = self.classifier.encode_batch(audio1.unsqueeze(0))
             embedding2 = self.classifier.encode_batch(audio2.unsqueeze(0))
         
-        # Calculer la similarité cosinus
+        # Compute cosine similarity
         similarity = F.cosine_similarity(embedding1, embedding2, dim=1).item()
         
         return similarity
     
     def _resample_audio(self, audio: torch.Tensor, orig_sr: int, target_sr: int) -> torch.Tensor:
-        """Resample l'audio"""
+        """Resamples audio."""
         if orig_sr == target_sr:
             return audio
         
-        # Utiliser librosa pour le resampling
+        # Use librosa for resampling
         audio_np = audio.numpy()
         resampled = librosa.resample(audio_np, orig_sr=orig_sr, target_sr=target_sr)
         
@@ -73,37 +73,37 @@ class SpeakerSimilarityMetric:
         threshold: float = 0.5
     ) -> Dict[str, float]:
         """
-        Calcule l'accuracy de vérification du locuteur
-        
+        Computes speaker verification accuracy.
+
         Args:
-            genuine_pairs: Paires de vrais locuteurs
-            impostor_pairs: Paires d'imposteurs
-            threshold: Seuil de décision
-            
+            genuine_pairs: Pairs from the same speaker.
+            impostor_pairs: Pairs from different speakers.
+            threshold: Decision threshold.
+
         Returns:
-            metrics: Dictionnaire des métriques
+            metrics: Dictionary of verification metrics.
         """
-        # Vrais positifs
+        # True positives
         tp = 0
         for audio1, audio2 in genuine_pairs:
             similarity = self.compute_similarity(audio1, audio2)
             if similarity >= threshold:
                 tp += 1
         
-        # Faux négatifs
+        # False negatives
         fn = len(genuine_pairs) - tp
         
-        # Vrais négatifs
+        # True negatives
         tn = 0
         for audio1, audio2 in impostor_pairs:
             similarity = self.compute_similarity(audio1, audio2)
             if similarity < threshold:
                 tn += 1
         
-        # Faux positifs
+        # False positives
         fp = len(impostor_pairs) - tn
         
-        # Calculer les métriques
+        # Compute metrics
         accuracy = (tp + tn) / (tp + tn + fp + fn)
         precision = tp / (tp + fp) if (tp + fp) > 0 else 0
         recall = tp / (tp + fn) if (tp + fn) > 0 else 0
@@ -118,28 +118,28 @@ class SpeakerSimilarityMetric:
         }
     
     def _compute_eer(self, genuine_pairs: List, impostor_pairs: List) -> float:
-        """Calcule l'Equal Error Rate"""
-        # Calculer les scores pour les vrais locuteurs
+        """Computes the Equal Error Rate."""
+        # Compute scores for genuine speakers
         genuine_scores = []
         for audio1, audio2 in genuine_pairs:
             score = self.compute_similarity(audio1, audio2)
             genuine_scores.append(score)
         
-        # Calculer les scores pour les imposteurs
+        # Compute scores for impostors
         impostor_scores = []
         for audio1, audio2 in impostor_pairs:
             score = self.compute_similarity(audio1, audio2)
             impostor_scores.append(score)
         
-        # Trouver le seuil EER
+        # Find the EER threshold
         all_scores = genuine_scores + impostor_scores
-        eer = 0.5  # Placeholder - à implémenter correctement
+        eer = 0.5  # Placeholder - to be implemented properly
         
         return eer
 
 
 class ASRMetric:
-    """Métrique ASR pour évaluer la préservation du contenu"""
+    """ASR metric for evaluating content preservation."""
     
     def __init__(self, model_name: str = "openai/whisper-base"):
         self.model = whisper.load_model("base")
@@ -150,23 +150,23 @@ class ASRMetric:
         predicted_text: str
     ) -> float:
         """
-        Calcule le Word Error Rate
-        
+        Computes the Word Error Rate.
+
         Args:
-            reference_text: Texte de référence
-            predicted_text: Texte prédit
-            
+            reference_text: Reference text.
+            predicted_text: Predicted text.
+
         Returns:
-            wer: Word Error Rate
+            wer: Word Error Rate.
         """
-        # Tokeniser les textes
+        # Tokenize texts
         ref_words = reference_text.lower().split()
         pred_words = predicted_text.lower().split()
         
-        # Calculer la distance d'édition
+        # Compute edit distance
         distance = self._levenshtein_distance(ref_words, pred_words)
         
-        # WER = distance / nombre de mots de référence
+        # WER = distance / number of reference words
         wer = distance / len(ref_words) if len(ref_words) > 0 else 0
         
         return wer
@@ -177,47 +177,47 @@ class ASRMetric:
         predicted_text: str
     ) -> float:
         """
-        Calcule le Character Error Rate
-        
+        Computes the Character Error Rate.
+
         Args:
-            reference_text: Texte de référence
-            predicted_text: Texte prédit
-            
+            reference_text: Reference text.
+            predicted_text: Predicted text.
+
         Returns:
-            cer: Character Error Rate
+            cer: Character Error Rate.
         """
-        # Calculer la distance d'édition au niveau des caractères
+        # Compute edit distance at the character level
         distance = self._levenshtein_distance(
             list(reference_text.lower()),
             list(predicted_text.lower())
         )
         
-        # CER = distance / nombre de caractères de référence
+        # CER = distance / number of reference characters
         cer = distance / len(reference_text) if len(reference_text) > 0 else 0
         
         return cer
     
     def transcribe_audio(self, audio: torch.Tensor, sample_rate: int = 16000) -> str:
         """
-        Transcrit un audio en texte
-        
+        Transcribes audio into text.
+
         Args:
-            audio: Audio à transcrire
-            sample_rate: Fréquence d'échantillonnage
-            
+            audio: Audio to transcribe.
+            sample_rate: Sampling rate.
+
         Returns:
-            text: Texte transcrit
+            text: Transcribed text.
         """
-        # Convertir en numpy
+        # Convert to numpy
         audio_np = audio.numpy()
         
-        # Transcrir avec Whisper
+        # Transcribe with Whisper
         result = self.model.transcribe(audio_np)
         
         return result["text"]
     
     def _levenshtein_distance(self, s1: List, s2: List) -> int:
-        """Calcule la distance de Levenshtein"""
+        """Computes Levenshtein distance."""
         if len(s1) < len(s2):
             return self._levenshtein_distance(s2, s1)
         
@@ -238,21 +238,21 @@ class ASRMetric:
 
 
 class AudioQualityMetric:
-    """Métriques de qualité audio"""
+    """Audio quality metrics."""
     
     def __init__(self):
         pass
     
     def compute_snr(self, signal: torch.Tensor, noise: torch.Tensor) -> float:
         """
-        Calcule le Signal-to-Noise Ratio
-        
+        Computes the Signal-to-Noise Ratio.
+
         Args:
-            signal: Signal
-            noise: Bruit
-            
+            signal: Signal.
+            noise: Noise.
+
         Returns:
-            snr: SNR en dB
+            snr: SNR in dB.
         """
         signal_power = torch.mean(signal ** 2)
         noise_power = torch.mean(noise ** 2)
@@ -265,14 +265,14 @@ class AudioQualityMetric:
     
     def compute_spectral_centroid(self, audio: torch.Tensor, sample_rate: int = 22050) -> float:
         """
-        Calcule le centroïde spectral
-        
+        Computes the spectral centroid.
+
         Args:
-            audio: Audio
-            sample_rate: Fréquence d'échantillonnage
-            
+            audio: Audio.
+            sample_rate: Sampling rate.
+
         Returns:
-            centroid: Centroïde spectral
+            centroid: Spectral centroid.
         """
         audio_np = audio.numpy()
         centroid = librosa.feature.spectral_centroid(
@@ -283,14 +283,14 @@ class AudioQualityMetric:
     
     def compute_spectral_rolloff(self, audio: torch.Tensor, sample_rate: int = 22050) -> float:
         """
-        Calcule le spectral rolloff
-        
+        Computes spectral rolloff.
+
         Args:
-            audio: Audio
-            sample_rate: Fréquence d'échantillonnage
-            
+            audio: Audio.
+            sample_rate: Sampling rate.
+
         Returns:
-            rolloff: Spectral rolloff
+            rolloff: Spectral rolloff.
         """
         audio_np = audio.numpy()
         rolloff = librosa.feature.spectral_rolloff(
@@ -301,13 +301,13 @@ class AudioQualityMetric:
     
     def compute_zero_crossing_rate(self, audio: torch.Tensor) -> float:
         """
-        Calcule le taux de passage par zéro
-        
+        Computes the zero-crossing rate.
+
         Args:
-            audio: Audio
-            
+            audio: Audio.
+
         Returns:
-            zcr: Taux de passage par zéro
+            zcr: Zero-crossing rate.
         """
         audio_np = audio.numpy()
         zcr = librosa.feature.zero_crossing_rate(audio_np)[0]
@@ -321,17 +321,17 @@ class AudioQualityMetric:
         sample_rate: int = 22050
     ) -> float:
         """
-        Calcule la similarité MFCC entre deux audios
-        
+        Computes MFCC similarity between two audio samples.
+
         Args:
-            audio1: Premier audio
-            audio2: Deuxième audio
-            sample_rate: Fréquence d'échantillonnage
-            
+            audio1: First audio sample.
+            audio2: Second audio sample.
+            sample_rate: Sampling rate.
+
         Returns:
-            similarity: Similarité MFCC
+            similarity: MFCC similarity.
         """
-        # Extraire les MFCCs
+        # Extract MFCCs
         mfcc1 = librosa.feature.mfcc(
             y=audio1.numpy(), sr=sample_rate, n_mfcc=13
         )
@@ -339,7 +339,7 @@ class AudioQualityMetric:
             y=audio2.numpy(), sr=sample_rate, n_mfcc=13
         )
         
-        # Calculer la similarité cosinus
+        # Compute cosine similarity
         mfcc1_flat = mfcc1.flatten()
         mfcc2_flat = mfcc2.flatten()
         
@@ -349,12 +349,12 @@ class AudioQualityMetric:
 
 
 class ComprehensiveEvaluator:
-    """Évaluateur complet pour MulliVC"""
+    """Comprehensive evaluator for MulliVC."""
     
     def __init__(self, config: dict):
         self.config = config
         
-        # Initialiser les métriques
+        # Initialize metrics
         self.speaker_metric = SpeakerSimilarityMetric()
         self.asr_metric = ASRMetric()
         self.quality_metric = AudioQualityMetric()
@@ -367,39 +367,39 @@ class ComprehensiveEvaluator:
         reference_text: Optional[str] = None
     ) -> Dict[str, float]:
         """
-        Évalue complètement une conversion
-        
+        Fully evaluates a conversion.
+
         Args:
-            source_audio: Audio source
-            target_speaker_audio: Audio du locuteur cible
-            converted_audio: Audio converti
-            reference_text: Texte de référence (optionnel)
-            
+            source_audio: Source audio.
+            target_speaker_audio: Target speaker audio.
+            converted_audio: Converted audio.
+            reference_text: Reference text, if available.
+
         Returns:
-            metrics: Dictionnaire des métriques
+            metrics: Dictionary of metrics.
         """
         metrics = {}
         
-        # Similarité du locuteur
+        # Speaker similarity
         metrics['speaker_similarity'] = self.speaker_metric.compute_similarity(
             converted_audio, target_speaker_audio
         )
         
-        # Préservation du contenu
+        # Content preservation
         if reference_text is not None:
-            # Transcrire l'audio converti
+            # Transcribe the converted audio
             predicted_text = self.asr_metric.transcribe_audio(converted_audio)
             
-            # Calculer WER et CER
+            # Compute WER and CER
             metrics['wer'] = self.asr_metric.compute_wer(reference_text, predicted_text)
             metrics['cer'] = self.asr_metric.compute_cer(reference_text, predicted_text)
         
-        # Qualité audio
+        # Audio quality
         metrics['spectral_centroid'] = self.quality_metric.compute_spectral_centroid(converted_audio)
         metrics['spectral_rolloff'] = self.quality_metric.compute_spectral_rolloff(converted_audio)
         metrics['zero_crossing_rate'] = self.quality_metric.compute_zero_crossing_rate(converted_audio)
         
-        # Similarité MFCC avec l'original
+        # MFCC similarity with the original
         metrics['mfcc_similarity'] = self.quality_metric.compute_mfcc_similarity(
             source_audio, converted_audio
         )
@@ -414,16 +414,16 @@ class ComprehensiveEvaluator:
         reference_texts: Optional[List[str]] = None
     ) -> Dict[str, float]:
         """
-        Évalue un batch de conversions
-        
+        Evaluates a batch of conversions.
+
         Args:
-            source_audios: Liste des audios sources
-            target_speaker_audios: Liste des audios des locuteurs cibles
-            converted_audios: Liste des audios convertis
-            reference_texts: Liste des textes de référence (optionnel)
-            
+            source_audios: List of source audios.
+            target_speaker_audios: List of target speaker audios.
+            converted_audios: List of converted audios.
+            reference_texts: List of reference texts, if available.
+
         Returns:
-            metrics: Métriques moyennes
+            metrics: Average metrics.
         """
         all_metrics = []
         
@@ -439,7 +439,7 @@ class ComprehensiveEvaluator:
             
             all_metrics.append(metrics)
         
-        # Moyenner les métriques
+        # Average metrics
         avg_metrics = {}
         for key in all_metrics[0].keys():
             avg_metrics[key] = np.mean([m[key] for m in all_metrics])

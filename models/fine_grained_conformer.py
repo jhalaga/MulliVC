@@ -1,5 +1,5 @@
 """
-Fine-grained Timbre Conformer pour capturer les détails fins du timbre
+Fine-grained Timbre Conformer for capturing fine timbre details.
 """
 import torch
 import torch.nn as nn
@@ -9,7 +9,7 @@ import math
 
 
 class ConvolutionModule(nn.Module):
-    """Module de convolution pour le Conformer"""
+    """Convolution module for the Conformer."""
     
     def __init__(
         self,
@@ -48,15 +48,15 @@ class ConvolutionModule(nn.Module):
     
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """
-        Forward pass du module de convolution
-        
+        Forward pass of the convolution module.
+
         Args:
-            x: Tensor de forme (batch_size, seq_len, input_dim)
-            
+            x: Tensor of shape (batch_size, seq_len, input_dim).
+
         Returns:
-            output: Tensor de forme (batch_size, seq_len, input_dim)
+            output: Tensor of shape (batch_size, seq_len, input_dim).
         """
-        # Transpose pour la convolution 1D
+        # Transpose for 1D convolution
         x = x.transpose(1, 2)  # (batch_size, input_dim, seq_len)
         
         # Pointwise conv 1
@@ -65,7 +65,7 @@ class ConvolutionModule(nn.Module):
         # Depthwise conv
         x = self.depthwise_conv(x)
         
-        # Batch norm et activation
+        # Batch norm and activation
         x = self.batch_norm(x)
         x = self.activation(x)
         
@@ -82,7 +82,7 @@ class ConvolutionModule(nn.Module):
 
 
 class MultiHeadSelfAttention(nn.Module):
-    """Attention multi-têtes avec position encoding"""
+    """Multi-head attention with positional encoding."""
     
     def __init__(
         self,
@@ -98,7 +98,7 @@ class MultiHeadSelfAttention(nn.Module):
         
         assert input_dim % num_heads == 0, "input_dim doit être divisible par num_heads"
         
-        # Projections linéaires
+        # Linear projections
         self.q_linear = nn.Linear(input_dim, input_dim)
         self.k_linear = nn.Linear(input_dim, input_dim)
         self.v_linear = nn.Linear(input_dim, input_dim)
@@ -107,7 +107,7 @@ class MultiHeadSelfAttention(nn.Module):
         # Dropout
         self.dropout = nn.Dropout(dropout)
         
-        # Position encoding
+        # Positional encoding
         self.pos_encoding = PositionalEncoding(input_dim)
     
     def forward(
@@ -116,15 +116,15 @@ class MultiHeadSelfAttention(nn.Module):
         mask: Optional[torch.Tensor] = None
     ) -> Tuple[torch.Tensor, torch.Tensor]:
         """
-        Forward pass de l'attention
-        
+        Forward pass of the attention block.
+
         Args:
-            x: Tensor de forme (batch_size, seq_len, input_dim)
-            mask: Masque d'attention optionnel
-            
+            x: Tensor of shape (batch_size, seq_len, input_dim).
+            mask: Optional attention mask.
+
         Returns:
-            output: Tensor de forme (batch_size, seq_len, input_dim)
-            attention_weights: Poids d'attention
+            output: Tensor of shape (batch_size, seq_len, input_dim).
+            attention_weights: Attention weights.
         """
         batch_size, seq_len, _ = x.shape
         
@@ -136,15 +136,15 @@ class MultiHeadSelfAttention(nn.Module):
         k = self.k_linear(x)
         v = self.v_linear(x)
         
-        # Reshape pour multi-head attention
+        # Reshape for multi-head attention
         q = q.view(batch_size, seq_len, self.num_heads, self.head_dim).transpose(1, 2)
         k = k.view(batch_size, seq_len, self.num_heads, self.head_dim).transpose(1, 2)
         v = v.view(batch_size, seq_len, self.num_heads, self.head_dim).transpose(1, 2)
         
-        # Calcul des scores d'attention
+        # Compute attention scores
         scores = torch.matmul(q, k.transpose(-2, -1)) / math.sqrt(self.head_dim)
         
-        # Appliquer le masque si fourni
+        # Apply the mask if provided
         if mask is not None:
             scores = scores.masked_fill(mask == 0, -1e9)
         
@@ -152,10 +152,10 @@ class MultiHeadSelfAttention(nn.Module):
         attention_weights = F.softmax(scores, dim=-1)
         attention_weights = self.dropout(attention_weights)
         
-        # Appliquer l'attention aux valeurs
+        # Apply attention to values
         attended = torch.matmul(attention_weights, v)
         
-        # Reshape et projection finale
+        # Reshape and apply the final projection
         attended = attended.transpose(1, 2).contiguous().view(
             batch_size, seq_len, self.input_dim
         )
@@ -165,7 +165,7 @@ class MultiHeadSelfAttention(nn.Module):
 
 
 class PositionalEncoding(nn.Module):
-    """Positional encoding pour les séquences"""
+    """Positional encoding for sequences."""
     
     def __init__(self, d_model: int, max_len: int = 5000):
         super().__init__()
@@ -184,19 +184,19 @@ class PositionalEncoding(nn.Module):
     
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """
-        Ajoute l'encoding positionnel
-        
+        Adds positional encoding.
+
         Args:
-            x: Tensor de forme (batch_size, seq_len, d_model)
-            
+            x: Tensor of shape (batch_size, seq_len, d_model).
+
         Returns:
-            x + pe: Tensor avec encoding positionnel
+            x + pe: Tensor with positional encoding.
         """
         return x + self.pe[:x.size(1), :].transpose(0, 1)
 
 
 class ConformerBlock(nn.Module):
-    """Bloc Conformer complet"""
+    """Complete Conformer block."""
     
     def __init__(
         self,
@@ -258,35 +258,35 @@ class ConformerBlock(nn.Module):
         mask: Optional[torch.Tensor] = None
     ) -> Tuple[torch.Tensor, torch.Tensor]:
         """
-        Forward pass du bloc Conformer
-        
+        Forward pass of the Conformer block.
+
         Args:
-            x: Tensor de forme (batch_size, seq_len, input_dim)
-            mask: Masque d'attention optionnel
-            
+            x: Tensor of shape (batch_size, seq_len, input_dim).
+            mask: Optional attention mask.
+
         Returns:
-            output: Tensor de forme (batch_size, seq_len, input_dim)
-            attention_weights: Poids d'attention
+            output: Tensor of shape (batch_size, seq_len, input_dim).
+            attention_weights: Attention weights.
         """
-        # Feed-forward 1 avec residual connection
+        # Feed-forward 1 with residual connection
         residual = x
         x = self.layer_norm1(x)
         x = self.ff1(x)
         x = self.dropout(x) + residual
         
-        # Multi-head attention avec residual connection
+        # Multi-head attention with residual connection
         residual = x
         x = self.layer_norm2(x)
         x, attention_weights = self.attention(x, mask)
         x = self.dropout(x) + residual
         
-        # Convolution module avec residual connection
+        # Convolution module with residual connection
         residual = x
         x = self.layer_norm3(x)
         x = self.conv_module(x)
         x = self.dropout(x) + residual
         
-        # Feed-forward 2 avec residual connection
+        # Feed-forward 2 with residual connection
         residual = x
         x = self.layer_norm4(x)
         x = self.ff2(x)
@@ -297,7 +297,7 @@ class ConformerBlock(nn.Module):
 
 class FineGrainedTimbreConformer(nn.Module):
     """
-    Fine-grained Timbre Conformer pour capturer les détails fins du timbre
+    Fine-grained Timbre Conformer for capturing fine timbre details.
     """
     
     def __init__(
@@ -334,7 +334,7 @@ class FineGrainedTimbreConformer(nn.Module):
             nn.LayerNorm(self.output_dim)
         )
         
-        # Attention pooling pour obtenir une représentation globale
+        # Attention pooling to obtain a global representation
         self.attention_pooling = nn.MultiheadAttention(
             embed_dim=self.output_dim,
             num_heads=8,
@@ -349,27 +349,27 @@ class FineGrainedTimbreConformer(nn.Module):
         mask: Optional[torch.Tensor] = None
     ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         """
-        Forward pass du Fine-grained Timbre Conformer
-        
+        Forward pass of the Fine-grained Timbre Conformer.
+
         Args:
-            timbre_features: Tensor de forme (batch_size, seq_len, input_dim)
-            content_features: Tensor de forme (batch_size, seq_len, input_dim)
-            mask: Masque d'attention optionnel
-            
+            timbre_features: Tensor of shape (batch_size, seq_len, input_dim).
+            content_features: Tensor of shape (batch_size, seq_len, input_dim).
+            mask: Optional attention mask.
+
         Returns:
-            fine_grained_timbre: Tensor de forme (batch_size, seq_len, output_dim)
-            global_timbre: Tensor de forme (batch_size, output_dim)
-            attention_weights: Poids d'attention de tous les blocs
+            fine_grained_timbre: Tensor of shape (batch_size, seq_len, output_dim).
+            global_timbre: Tensor of shape (batch_size, output_dim).
+            attention_weights: Attention weights from all blocks.
         """
         batch_size, seq_len, _ = timbre_features.shape
         
-        # Fusion des features de timbre et de contenu
+        # Fuse timbre and content features
         combined_features = timbre_features + content_features
         
         # Input projection
         x = self.input_projection(combined_features)
         
-        # Appliquer les blocs Conformer
+        # Apply Conformer blocks
         all_attention_weights = []
         for block in self.conformer_blocks:
             x, attention_weights = block(x, mask)
@@ -378,8 +378,8 @@ class FineGrainedTimbreConformer(nn.Module):
         # Output projection
         fine_grained_timbre = self.output_projection(x)
         
-        # Attention pooling pour représentation globale
-        # Utiliser une query globale
+        # Attention pooling for a global representation
+        # Use a global query
         global_query = torch.mean(fine_grained_timbre, dim=1, keepdim=True)
         global_timbre, _ = self.attention_pooling(
             global_query, fine_grained_timbre, fine_grained_timbre
@@ -394,14 +394,14 @@ class FineGrainedTimbreConformer(nn.Module):
         content_features: torch.Tensor
     ) -> torch.Tensor:
         """
-        Méthode simplifiée pour extraire les features fine-grained
-        
+        Simplified method for extracting fine-grained features.
+
         Args:
-            timbre_features: Tensor de forme (batch_size, seq_len, input_dim)
-            content_features: Tensor de forme (batch_size, seq_len, input_dim)
-            
+            timbre_features: Tensor of shape (batch_size, seq_len, input_dim).
+            content_features: Tensor of shape (batch_size, seq_len, input_dim).
+
         Returns:
-            fine_grained_features: Tensor de forme (batch_size, seq_len, output_dim)
+            fine_grained_features: Tensor of shape (batch_size, seq_len, output_dim).
         """
         fine_grained_timbre, _, _ = self.forward(timbre_features, content_features)
         return fine_grained_timbre

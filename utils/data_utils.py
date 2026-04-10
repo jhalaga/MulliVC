@@ -1,5 +1,5 @@
 """
-Utilitaires pour le chargement et le traitement des données
+Utilities for data loading and processing.
 """
 import torch
 from torch.utils.data import Dataset, DataLoader
@@ -12,7 +12,7 @@ import yaml
 
 
 class MulliVCDataset(Dataset):
-    """Dataset pour MulliVC avec support multilingue"""
+    """Dataset for MulliVC with multilingual support."""
     
     def __init__(
         self,
@@ -24,30 +24,30 @@ class MulliVCDataset(Dataset):
         self.split = split
         self.max_samples = max_samples
         
-        # Charger les datasets
+        # Load datasets
         self.libritts_data = self._load_libritts()
         self.fongbe_data = self._load_fongbe()
         
-        # Créer les listes d'échantillons
+        # Create sample lists
         self.samples = self._create_samples()
         
         if max_samples:
             self.samples = self.samples[:max_samples]
     
     def _load_libritts(self) -> List[Dict]:
-        """Charge le dataset LibriTTS"""
+        """Loads the LibriTTS dataset."""
         try:
-            # Charger depuis HuggingFace
+            # Load from HuggingFace
             dataset = load_dataset(
                 "mythicinfinity/libritts",
                 split="train.clean.360",
                 streaming=True
             )
             
-            # Convertir en liste pour faciliter l'accès
+            # Convert to a list for easier access
             libritts_samples = []
             for i, sample in enumerate(dataset):
-                if i >= 1000:  # Limiter pour les tests
+                if i >= 1000:  # Limit for tests
                     break
                 libritts_samples.append({
                     'audio': sample['audio'],
@@ -63,19 +63,19 @@ class MulliVCDataset(Dataset):
             return []
     
     def _load_fongbe(self) -> List[Dict]:
-        """Charge le dataset Fongbe"""
+        """Loads the Fongbe dataset."""
         try:
-            # Charger depuis HuggingFace
+            # Load from HuggingFace
             dataset = load_dataset(
                 "beethogedeon/fongbe-speech",
                 split="train",
                 streaming=True
             )
             
-            # Convertir en liste
+            # Convert to a list
             fongbe_samples = []
             for i, sample in enumerate(dataset):
-                if i >= 1000:  # Limiter pour les tests
+                if i >= 1000:  # Limit for tests
                     break
                 fongbe_samples.append({
                     'audio': sample['audio'],
@@ -91,10 +91,10 @@ class MulliVCDataset(Dataset):
             return []
     
     def _create_samples(self) -> List[Dict]:
-        """Crée la liste des échantillons pour l'entraînement"""
+        """Creates the sample list for training."""
         samples = []
         
-        # Ajouter les échantillons LibriTTS
+        # Add LibriTTS samples
         for sample in self.libritts_data:
             samples.append({
                 'audio': sample['audio'],
@@ -104,7 +104,7 @@ class MulliVCDataset(Dataset):
                 'dataset': 'libritts'
             })
         
-        # Ajouter les échantillons Fongbe
+        # Add Fongbe samples
         for sample in self.fongbe_data:
             samples.append({
                 'audio': sample['audio'],
@@ -120,14 +120,14 @@ class MulliVCDataset(Dataset):
         return len(self.samples)
     
     def __getitem__(self, idx: int) -> Dict:
-        """Récupère un échantillon du dataset"""
+        """Retrieves a sample from the dataset."""
         sample = self.samples[idx]
         
-        # Charger l'audio
+        # Load audio
         audio = sample['audio']['array']
         audio_tensor = torch.from_numpy(audio).float()
         
-        # Normaliser l'audio
+        # Normalize audio
         audio_tensor = audio_tensor / (torch.abs(audio_tensor).max() + 1e-8)
         
         return {
@@ -139,7 +139,7 @@ class MulliVCDataset(Dataset):
         }
     
     def get_speaker_samples(self, speaker_id: str, language: str) -> List[Dict]:
-        """Récupère tous les échantillons d'un locuteur dans une langue donnée"""
+        """Retrieves all samples for a speaker in a given language."""
         speaker_samples = []
         for sample in self.samples:
             if (sample['speaker_id'] == speaker_id and 
@@ -148,7 +148,7 @@ class MulliVCDataset(Dataset):
         return speaker_samples
     
     def get_random_speaker(self, language: str) -> str:
-        """Récupère un ID de locuteur aléatoire pour une langue donnée"""
+        """Retrieves a random speaker ID for a given language."""
         language_samples = [s for s in self.samples if s['language'] == language]
         if not language_samples:
             return None
@@ -164,7 +164,7 @@ def create_dataloader(
     shuffle: bool = True,
     num_workers: int = 4
 ) -> DataLoader:
-    """Crée un DataLoader pour MulliVC"""
+    """Creates a DataLoader for MulliVC."""
     
     dataset = MulliVCDataset(config, split=split)
     
@@ -181,15 +181,15 @@ def create_dataloader(
 
 
 def collate_fn(batch: List[Dict]) -> Dict:
-    """Fonction de collation pour le DataLoader"""
-    # Séparer les éléments du batch
+    """Collation function for the DataLoader."""
+    # Split batch items
     audios = [item['audio'] for item in batch]
     texts = [item['text'] for item in batch]
     speaker_ids = [item['speaker_id'] for item in batch]
     languages = [item['language'] for item in batch]
     datasets = [item['dataset'] for item in batch]
     
-    # Pad les audios à la même longueur
+    # Pad audio to the same length
     max_length = max([len(audio) for audio in audios])
     padded_audios = []
     
@@ -215,18 +215,18 @@ def create_cross_lingual_pairs(
     num_pairs: int = 100
 ) -> List[Tuple[Dict, Dict]]:
     """
-    Crée des paires cross-linguales pour l'entraînement
-    
+    Creates cross-lingual pairs for training.
+
     Args:
-        dataset: Dataset MulliVC
-        num_pairs: Nombre de paires à créer
-        
+        dataset: MulliVC dataset.
+        num_pairs: Number of pairs to create.
+
     Returns:
-        List de tuples (sample_A, sample_B) où A et B sont de langues différentes
+        List of tuples (sample_A, sample_B) where A and B are from different languages.
     """
     pairs = []
     
-    # Obtenir les locuteurs par langue
+    # Get speakers by language
     en_speakers = list(set([
         s['speaker_id'] for s in dataset.samples 
         if s['language'] == 'en'
@@ -237,19 +237,19 @@ def create_cross_lingual_pairs(
     ]))
     
     for _ in range(num_pairs):
-        # Choisir un locuteur anglais
+        # Choose an English speaker
         en_speaker = random.choice(en_speakers)
         en_samples = dataset.get_speaker_samples(en_speaker, 'en')
         if not en_samples:
             continue
         
-        # Choisir un locuteur fongbe
+        # Choose a Fongbe speaker
         fongbe_speaker = random.choice(fongbe_speakers)
         fongbe_samples = dataset.get_speaker_samples(fongbe_speaker, 'fongbe')
         if not fongbe_samples:
             continue
         
-        # Créer une paire
+        # Create a pair
         en_sample = random.choice(en_samples)
         fongbe_sample = random.choice(fongbe_samples)
         
@@ -259,7 +259,7 @@ def create_cross_lingual_pairs(
 
 
 def load_config(config_path: str) -> dict:
-    """Charge la configuration depuis un fichier YAML"""
+    """Loads configuration from a YAML file."""
     with open(config_path, 'r') as f:
         config = yaml.safe_load(f)
     return config

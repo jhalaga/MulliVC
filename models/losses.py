@@ -1,5 +1,5 @@
 """
-Fonctions de perte pour MulliVC
+Loss functions for MulliVC.
 """
 import torch
 import torch.nn as nn
@@ -9,7 +9,7 @@ import numpy as np
 
 
 class ReconstructionLoss(nn.Module):
-    """Perte de reconstruction L1 et L2"""
+    """L1 and L2 reconstruction loss."""
     
     def __init__(
         self,
@@ -31,14 +31,14 @@ class ReconstructionLoss(nn.Module):
         target: torch.Tensor
     ) -> torch.Tensor:
         """
-        Calcule la perte de reconstruction
-        
+        Computes reconstruction loss.
+
         Args:
-            predicted: Tensor prédit
-            target: Tensor cible
-            
+            predicted: Predicted tensor.
+            target: Target tensor.
+
         Returns:
-            loss: Perte de reconstruction
+            loss: Reconstruction loss.
         """
         l1_loss = self.l1_loss(predicted, target)
         l2_loss = self.l2_loss(predicted, target)
@@ -49,7 +49,7 @@ class ReconstructionLoss(nn.Module):
 
 
 class TimbreLoss(nn.Module):
-    """Perte de timbre basée sur la similarité cosinus"""
+    """Timbre loss based on cosine similarity."""
     
     def __init__(
         self,
@@ -67,39 +67,39 @@ class TimbreLoss(nn.Module):
         negative_timbre: Optional[torch.Tensor] = None
     ) -> torch.Tensor:
         """
-        Calcule la perte de timbre
-        
+        Computes timbre loss.
+
         Args:
-            predicted_timbre: Timbre prédit (batch_size, timbre_dim)
-            target_timbre: Timbre cible (batch_size, timbre_dim)
-            negative_timbre: Timbre négatif pour contraste (batch_size, timbre_dim)
-            
+            predicted_timbre: Predicted timbre of shape (batch_size, timbre_dim).
+            target_timbre: Target timbre of shape (batch_size, timbre_dim).
+            negative_timbre: Negative timbre for contrastive learning.
+
         Returns:
-            loss: Perte de timbre
+            loss: Timbre loss.
         """
-        # Normaliser les vecteurs
+        # Normalize vectors
         predicted_norm = F.normalize(predicted_timbre, p=2, dim=1)
         target_norm = F.normalize(target_timbre, p=2, dim=1)
         
-        # Similarité cosinus positive
+        # Positive cosine similarity
         positive_sim = F.cosine_similarity(predicted_norm, target_norm, dim=1)
         
         if negative_timbre is not None:
-            # Similarité cosinus négative
+            # Negative cosine similarity
             negative_norm = F.normalize(negative_timbre, p=2, dim=1)
             negative_sim = F.cosine_similarity(predicted_norm, negative_norm, dim=1)
             
             # Triplet loss
             loss = F.relu(self.margin - positive_sim + negative_sim).mean()
         else:
-            # Perte de similarité simple
+            # Simple similarity loss
             loss = (1 - positive_sim).mean()
         
         return loss
 
 
 class PitchLoss(nn.Module):
-    """Perte de pitch (F0)"""
+    """Pitch (F0) loss."""
     
     def __init__(
         self,
@@ -121,18 +121,18 @@ class PitchLoss(nn.Module):
         target_voiced: torch.Tensor
     ) -> torch.Tensor:
         """
-        Calcule la perte de pitch
-        
+        Computes pitch loss.
+
         Args:
-            predicted_pitch: Pitch prédit (batch_size, seq_len)
-            target_pitch: Pitch cible (batch_size, seq_len)
-            predicted_voiced: Voiced prédit (batch_size, seq_len)
-            target_voiced: Voiced cible (batch_size, seq_len)
-            
+            predicted_pitch: Predicted pitch of shape (batch_size, seq_len).
+            target_pitch: Target pitch of shape (batch_size, seq_len).
+            predicted_voiced: Predicted voiced mask.
+            target_voiced: Target voiced mask.
+
         Returns:
-            loss: Perte de pitch
+            loss: Pitch loss.
         """
-        # Perte de pitch pour les segments voiced
+        # Pitch loss for voiced segments
         voiced_mask = target_voiced > 0.5
         if voiced_mask.any():
             pitch_loss = self.mse_loss(
@@ -142,7 +142,7 @@ class PitchLoss(nn.Module):
         else:
             pitch_loss = torch.tensor(0.0, device=predicted_pitch.device)
         
-        # Perte de classification voiced/unvoiced
+        # Voiced/unvoiced classification loss
         voiced_loss = self.bce_loss(predicted_voiced, target_voiced)
         
         total_loss = (
@@ -154,7 +154,7 @@ class PitchLoss(nn.Module):
 
 
 class ASRLoss(nn.Module):
-    """Perte ASR pour forcer la préservation du contenu"""
+    """ASR loss to enforce content preservation."""
     
     def __init__(
         self,
@@ -165,7 +165,7 @@ class ASRLoss(nn.Module):
         self.asr_model = asr_model
         self.weight = weight
         
-        # Si pas de modèle ASR fourni, utiliser une perte de contenu simple
+        # If no ASR model is provided, use a simple content loss
         if asr_model is None:
             self.content_loss = nn.MSELoss()
     
@@ -176,34 +176,34 @@ class ASRLoss(nn.Module):
         target_text: Optional[str] = None
     ) -> torch.Tensor:
         """
-        Calcule la perte ASR
-        
+        Computes ASR loss.
+
         Args:
-            generated_audio: Audio généré
-            target_audio: Audio cible
-            target_text: Texte cible optionnel
-            
+            generated_audio: Generated audio.
+            target_audio: Target audio.
+            target_text: Optional target text.
+
         Returns:
-            loss: Perte ASR
+            loss: ASR loss.
         """
         if self.asr_model is not None:
-            # Utiliser le modèle ASR pour extraire les features de contenu
+            # Use the ASR model to extract content features
             with torch.no_grad():
                 target_features = self.asr_model.extract_features(target_audio)
             
             generated_features = self.asr_model.extract_features(generated_audio)
             
-            # Perte de contenu
+            # Content loss
             loss = F.mse_loss(generated_features, target_features)
         else:
-            # Perte de contenu simple
+            # Simple content loss
             loss = self.content_loss(generated_audio, target_audio)
         
         return self.weight * loss
 
 
 class AdversarialLoss(nn.Module):
-    """Perte adversarial pour l'entraînement GAN"""
+    """Adversarial loss for GAN training."""
     
     def __init__(
         self,
@@ -220,14 +220,14 @@ class AdversarialLoss(nn.Module):
         is_real: bool = True
     ) -> torch.Tensor:
         """
-        Calcule la perte adversarial
-        
+        Computes adversarial loss.
+
         Args:
-            discriminator_output: Sortie du discriminateur
-            is_real: Si True, cible pour les vrais échantillons
-            
+            discriminator_output: Discriminator output.
+            is_real: If True, uses the target for real samples.
+
         Returns:
-            loss: Perte adversarial
+            loss: Adversarial loss.
         """
         if self.gan_mode == 'lsgan':
             if is_real:
@@ -255,7 +255,7 @@ class AdversarialLoss(nn.Module):
 
 
 class PerceptualLoss(nn.Module):
-    """Perte perceptuelle basée sur un modèle pré-entraîné"""
+    """Perceptual loss based on a pretrained model."""
     
     def __init__(
         self,
@@ -268,7 +268,7 @@ class PerceptualLoss(nn.Module):
         self.layers = layers
         self.weights = weights
         
-        # Geler les paramètres du feature extractor
+        # Freeze feature extractor parameters
         for param in self.feature_extractor.parameters():
             param.requires_grad = False
     
@@ -278,20 +278,20 @@ class PerceptualLoss(nn.Module):
         target: torch.Tensor
     ) -> torch.Tensor:
         """
-        Calcule la perte perceptuelle
-        
+        Computes perceptual loss.
+
         Args:
-            predicted: Tensor prédit
-            target: Tensor cible
-            
+            predicted: Predicted tensor.
+            target: Target tensor.
+
         Returns:
-            loss: Perte perceptuelle
+            loss: Perceptual loss.
         """
-        # Extraire les features
+        # Extract features
         pred_features = self.feature_extractor(predicted)
         target_features = self.feature_extractor(target)
         
-        # Calculer la perte pour chaque couche
+        # Compute loss for each layer
         total_loss = 0.0
         for i, (layer, weight) in enumerate(zip(self.layers, self.weights)):
             if layer < len(pred_features):
@@ -305,7 +305,7 @@ class PerceptualLoss(nn.Module):
 
 
 class CycleConsistencyLoss(nn.Module):
-    """Perte de cohérence cyclique pour l'entraînement cross-lingual"""
+    """Cycle consistency loss for cross-lingual training."""
     
     def __init__(
         self,
@@ -321,21 +321,21 @@ class CycleConsistencyLoss(nn.Module):
         original: torch.Tensor
     ) -> torch.Tensor:
         """
-        Calcule la perte de cohérence cyclique
-        
+        Computes cycle consistency loss.
+
         Args:
-            reconstructed: Tensor reconstruit
-            original: Tensor original
-            
+            reconstructed: Reconstructed tensor.
+            original: Original tensor.
+
         Returns:
-            loss: Perte de cohérence cyclique
+            loss: Cycle consistency loss.
         """
         loss = self.l1_loss(reconstructed, original)
         return self.weight * loss
 
 
 class MultiScaleLoss(nn.Module):
-    """Perte multi-échelle"""
+    """Multi-scale loss."""
     
     def __init__(
         self,
@@ -354,14 +354,14 @@ class MultiScaleLoss(nn.Module):
         target: torch.Tensor
     ) -> torch.Tensor:
         """
-        Calcule la perte multi-échelle
-        
+        Computes multi-scale loss.
+
         Args:
-            predicted: Tensor prédit
-            target: Tensor cible
-            
+            predicted: Predicted tensor.
+            target: Target tensor.
+
         Returns:
-            loss: Perte multi-échelle
+            loss: Multi-scale loss.
         """
         total_loss = 0.0
         
@@ -381,7 +381,7 @@ class MultiScaleLoss(nn.Module):
 
 
 class CombinedLoss(nn.Module):
-    """Combinaison de toutes les pertes pour MulliVC"""
+    """Combination of all losses for MulliVC."""
     
     def __init__(
         self,
@@ -398,7 +398,7 @@ class CombinedLoss(nn.Module):
         self.lambda_pitch = config['training']['lambda_pitch']
         self.lambda_asr = config['training']['lambda_asr']
         
-        # Initialiser les pertes
+        # Initialize losses
         self.reconstruction_loss = ReconstructionLoss()
         self.timbre_loss = TimbreLoss()
         self.pitch_loss = PitchLoss()
@@ -406,7 +406,7 @@ class CombinedLoss(nn.Module):
         self.adversarial_loss = AdversarialLoss(weight=self.lambda_adv)
         self.cycle_loss = CycleConsistencyLoss()
         
-        # Perte perceptuelle si disponible
+        # Perceptual loss if available
         if feature_extractor is not None:
             self.perceptual_loss = PerceptualLoss(feature_extractor)
         else:
@@ -428,46 +428,46 @@ class CombinedLoss(nn.Module):
         target_audio: Optional[torch.Tensor] = None
     ) -> Dict[str, torch.Tensor]:
         """
-        Calcule toutes les pertes combinées
-        
+        Computes all combined losses.
+
         Returns:
-            losses: Dictionnaire contenant toutes les pertes
+            losses: Dictionary containing all losses.
         """
         losses = {}
         
-        # Perte de reconstruction
+        # Reconstruction loss
         losses['reconstruction'] = self.lambda_rec * self.reconstruction_loss(
             predicted_mel, target_mel
         )
         
-        # Perte de timbre
+        # Timbre loss
         losses['timbre'] = self.lambda_timbre * self.timbre_loss(
             predicted_timbre, target_timbre
         )
         
-        # Perte de pitch
+        # Pitch loss
         losses['pitch'] = self.lambda_pitch * self.pitch_loss(
             predicted_pitch, target_pitch, predicted_voiced, target_voiced
         )
         
-        # Perte adversarial
+        # Adversarial loss
         losses['adversarial'] = self.adversarial_loss(
             discriminator_output, is_real
         )
         
-        # Perte ASR si audio fourni
+        # ASR loss if audio is provided
         if generated_audio is not None and target_audio is not None:
             losses['asr'] = self.asr_loss(generated_audio, target_audio)
         else:
             losses['asr'] = torch.tensor(0.0, device=predicted_mel.device)
         
-        # Perte perceptuelle si disponible
+        # Perceptual loss if available
         if self.perceptual_loss is not None:
             losses['perceptual'] = self.perceptual_loss(predicted_mel, target_mel)
         else:
             losses['perceptual'] = torch.tensor(0.0, device=predicted_mel.device)
         
-        # Perte totale
+        # Total loss
         losses['total'] = sum(losses.values())
         
         return losses

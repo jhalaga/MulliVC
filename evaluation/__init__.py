@@ -1,5 +1,5 @@
 """
-Métriques d'évaluation pour MulliVC
+Evaluation metrics for MulliVC.
 """
 from .metrics import (
     SpeakerSimilarityMetric,

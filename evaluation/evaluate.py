@@ -1,5 +1,5 @@
 """
-Script d'évaluation pour MulliVC
+Evaluation script for MulliVC.
 """
 import torch
 import argparse
@@ -16,13 +16,13 @@ from evaluation.metrics import ComprehensiveEvaluator
 
 
 class MulliVCEvaluator:
-    """Évaluateur pour MulliVC"""
+    """Evaluator for MulliVC."""
     
     def __init__(self, config_path: str, checkpoint_path: str):
         self.config = load_config(config_path)
         self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
         
-        # Charger le modèle
+        # Load the model
         self.model = create_mullivc_model(config_path).to(self.device)
         self.model.load_checkpoint(checkpoint_path)
         self.model.eval()
@@ -30,7 +30,7 @@ class MulliVCEvaluator:
         # Audio processor
         self.audio_processor = AudioProcessor(self.config)
         
-        # Évaluateur
+        # Evaluator
         self.evaluator = ComprehensiveEvaluator(self.config)
     
     def evaluate_dataset(
@@ -40,15 +40,15 @@ class MulliVCEvaluator:
         num_samples: int = 100
     ) -> Dict[str, float]:
         """
-        Évalue le modèle sur un dataset
-        
+        Evaluates the model on a dataset.
+
         Args:
-            dataloader: DataLoader du dataset
-            output_dir: Dossier de sortie pour les résultats
-            num_samples: Nombre d'échantillons à évaluer
-            
+            dataloader: Dataset dataloader.
+            output_dir: Output directory for results.
+            num_samples: Number of samples to evaluate.
+
         Returns:
-            metrics: Métriques d'évaluation
+            metrics: Evaluation metrics.
         """
         os.makedirs(output_dir, exist_ok=True)
         
@@ -63,29 +63,29 @@ class MulliVCEvaluator:
                 if i >= num_samples:
                     break
                 
-                # Déplacer sur le device
+                # Move to the device
                 batch = {k: v.to(self.device) if isinstance(v, torch.Tensor) else v 
                         for k, v in batch.items()}
                 
                 # Conversion
                 source_audio = batch['audio']
-                target_audio = batch['audio']  # Même audio pour l'évaluation
+                target_audio = batch['audio']  # Same audio for evaluation
                 
-                # Générer l'audio converti
+                # Generate converted audio
                 converted_mel = self.model.inference(source_audio, target_audio)
                 converted_audio = self.audio_processor.mel_to_audio(converted_mel.squeeze(0))
                 
-                # Stocker pour l'évaluation
+                # Store for evaluation
                 source_audios.append(source_audio.squeeze(0).cpu())
                 target_audios.append(target_audio.squeeze(0).cpu())
                 converted_audios.append(converted_audio.cpu())
                 reference_texts.append(batch['text'][0] if 'text' in batch else None)
                 
-                # Sauvegarder l'audio converti
+                # Save converted audio
                 output_path = os.path.join(output_dir, f"converted_{i:04d}.wav")
                 torchaudio.save(output_path, converted_audio, self.config['data']['sample_rate'])
         
-        # Évaluer le batch
+            # Evaluate the batch
         metrics = self.evaluator.evaluate_batch(
             source_audios,
             target_audios,
@@ -93,7 +93,7 @@ class MulliVCEvaluator:
             reference_texts
         )
         
-        # Sauvegarder les métriques
+        # Save metrics
         metrics_path = os.path.join(output_dir, "metrics.json")
         with open(metrics_path, 'w') as f:
             json.dump(metrics, f, indent=2)
@@ -108,16 +108,16 @@ class MulliVCEvaluator:
         num_samples: int = 50
     ) -> Dict[str, float]:
         """
-        Évalue la conversion cross-linguale
-        
+        Evaluates cross-lingual conversion.
+
         Args:
-            source_dataloader: DataLoader pour la langue source
-            target_dataloader: DataLoader pour la langue cible
-            output_dir: Dossier de sortie
-            num_samples: Nombre d'échantillons
-            
+            source_dataloader: Dataloader for the source language.
+            target_dataloader: Dataloader for the target language.
+            output_dir: Output directory.
+            num_samples: Number of samples.
+
         Returns:
-            metrics: Métriques cross-linguales
+            metrics: Cross-lingual metrics.
         """
         os.makedirs(output_dir, exist_ok=True)
         
@@ -125,20 +125,20 @@ class MulliVCEvaluator:
         
         with torch.no_grad():
             for i in tqdm(range(num_samples), desc="Évaluation cross-linguale"):
-                # Obtenir un échantillon source
+                # Get a source sample
                 source_batch = next(iter(source_dataloader))
                 source_audio = source_batch['audio'].to(self.device)
                 source_text = source_batch['text'][0] if 'text' in source_batch else None
                 
-                # Obtenir un échantillon cible
+                # Get a target sample
                 target_batch = next(iter(target_dataloader))
                 target_audio = target_batch['audio'].to(self.device)
                 
-                # Conversion cross-linguale
+                # Cross-lingual conversion
                 converted_mel = self.model.inference(source_audio, target_audio)
                 converted_audio = self.audio_processor.mel_to_audio(converted_mel.squeeze(0))
                 
-                # Évaluer
+                # Evaluate
                 metrics = self.evaluator.evaluate_conversion(
                     source_audio.squeeze(0).cpu(),
                     target_audio.squeeze(0).cpu(),
@@ -148,16 +148,16 @@ class MulliVCEvaluator:
                 
                 all_metrics.append(metrics)
                 
-                # Sauvegarder
+                # Save
                 output_path = os.path.join(output_dir, f"cross_lingual_{i:04d}.wav")
                 torchaudio.save(output_path, converted_audio, self.config['data']['sample_rate'])
         
-        # Moyenner les métriques
+            # Average metrics
         avg_metrics = {}
         for key in all_metrics[0].keys():
             avg_metrics[key] = np.mean([m[key] for m in all_metrics])
         
-        # Sauvegarder
+        # Save
         metrics_path = os.path.join(output_dir, "cross_lingual_metrics.json")
         with open(metrics_path, 'w') as f:
             json.dump(avg_metrics, f, indent=2)
@@ -170,14 +170,14 @@ class MulliVCEvaluator:
         impostor_pairs: List[tuple]
     ) -> Dict[str, float]:
         """
-        Évalue la vérification du locuteur
-        
+        Evaluates speaker verification.
+
         Args:
-            genuine_pairs: Paires de vrais locuteurs
-            impostor_pairs: Paires d'imposteurs
-            
+            genuine_pairs: Genuine speaker pairs.
+            impostor_pairs: Impostor pairs.
+
         Returns:
-            metrics: Métriques de vérification
+            metrics: Verification metrics.
         """
         return self.evaluator.speaker_metric.compute_speaker_verification_accuracy(
             genuine_pairs, impostor_pairs
@@ -189,11 +189,11 @@ class MulliVCEvaluator:
         output_path: str
     ):
         """
-        Génère un rapport d'évaluation
-        
+        Generates an evaluation report.
+
         Args:
-            metrics: Métriques d'évaluation
-            output_path: Chemin vers le rapport
+            metrics: Evaluation metrics.
+            output_path: Path to the report.
         """
         report = f"""
 # Rapport d'évaluation MulliVC
@@ -246,14 +246,14 @@ def main():
     
     args = parser.parse_args()
     
-    # Créer l'évaluateur
+    # Create the evaluator
     evaluator = MulliVCEvaluator(args.config, args.checkpoint)
     
-    # Créer les dataloaders
+    # Create dataloaders
     train_dataloader = create_dataloader(evaluator.config, split='train')
     val_dataloader = create_dataloader(evaluator.config, split='validation')
     
-    # Évaluation standard
+    # Standard evaluation
     print("Évaluation standard...")
     metrics = evaluator.evaluate_dataset(
         val_dataloader,
@@ -261,7 +261,7 @@ def main():
         args.num_samples
     )
     
-    # Évaluation cross-linguale si demandée
+    # Cross-lingual evaluation if requested
     if args.cross_lingual:
         print("Évaluation cross-linguale...")
         cross_lingual_metrics = evaluator.evaluate_cross_lingual(
@@ -271,10 +271,10 @@ def main():
             args.num_samples // 2
         )
         
-        # Combiner les métriques
+        # Combine metrics
         metrics.update(cross_lingual_metrics)
     
-    # Générer le rapport
+    # Generate the report
     report_path = os.path.join(args.output_dir, 'evaluation_report.md')
     evaluator.generate_evaluation_report(metrics, report_path)
     

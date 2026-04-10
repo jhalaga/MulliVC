@@ -1,5 +1,5 @@
 """
-Utilitaires pour le traitement audio
+Utilities for audio processing.
 """
 import torch
 import torchaudio
@@ -10,7 +10,7 @@ import soundfile as sf
 
 
 class MelSpectrogram:
-    """Classe pour calculer les mél-spectrogrammes"""
+    """Class for computing mel spectrograms."""
     
     def __init__(
         self,
@@ -28,7 +28,7 @@ class MelSpectrogram:
         self.mel_fmin = mel_fmin
         self.mel_fmax = mel_fmax or sample_rate // 2
         
-        # Créer le transformateur mel
+        # Create the mel transform
         self.mel_transform = torchaudio.transforms.MelSpectrogram(
             sample_rate=sample_rate,
             n_mel_channels=n_mel_channels,
@@ -41,28 +41,28 @@ class MelSpectrogram:
     
     def __call__(self, audio: torch.Tensor) -> torch.Tensor:
         """
-        Calcule le mél-spectrogramme d'un signal audio
-        
+        Computes the mel spectrogram of an audio signal.
+
         Args:
-            audio: Tensor de forme (batch_size, samples) ou (samples,)
-            
+            audio: Tensor of shape (batch_size, samples) or (samples,).
+
         Returns:
-            mel_spec: Tensor de forme (batch_size, n_mel_channels, time_frames)
+            mel_spec: Tensor of shape (batch_size, n_mel_channels, time_frames).
         """
         if audio.dim() == 1:
             audio = audio.unsqueeze(0)
         
-        # Calculer le mél-spectrogramme
+        # Compute the mel spectrogram
         mel_spec = self.mel_transform(audio)
         
-        # Convertir en log scale
+        # Convert to log scale
         mel_spec = torch.log(torch.clamp(mel_spec, min=1e-5))
         
         return mel_spec
 
 
 class AudioProcessor:
-    """Processeur audio pour MulliVC"""
+    """Audio processor for MulliVC."""
     
     def __init__(self, config: dict):
         self.sample_rate = config['data']['sample_rate']
@@ -82,33 +82,33 @@ class AudioProcessor:
         )
     
     def load_audio(self, file_path: str) -> torch.Tensor:
-        """Charge un fichier audio"""
+        """Loads an audio file."""
         audio, sr = torchaudio.load(file_path)
         
-        # Resample si nécessaire
+        # Resample if needed
         if sr != self.sample_rate:
             resampler = torchaudio.transforms.Resample(sr, self.sample_rate)
             audio = resampler(audio)
         
-        # Convertir en mono si stéréo
+        # Convert to mono if stereo
         if audio.shape[0] > 1:
             audio = audio.mean(dim=0, keepdim=True)
         
         return audio.squeeze(0)  # Retourner (samples,)
     
     def preprocess_audio(self, audio: torch.Tensor) -> torch.Tensor:
-        """Préprocesse l'audio (normalisation, trimming)"""
-        # Normaliser
+        """Preprocesses audio by normalizing and trimming it."""
+        # Normalize
         audio = audio / (torch.abs(audio).max() + 1e-8)
         
-        # Trimmer le silence
+        # Trim silence
         audio = self._trim_silence(audio)
         
         return audio
     
     def _trim_silence(self, audio: torch.Tensor, threshold: float = 0.01) -> torch.Tensor:
-        """Supprime le silence au début et à la fin"""
-        # Trouver les indices non-silencieux
+        """Removes silence at the beginning and end."""
+        # Find non-silent indices
         non_silent = torch.abs(audio) > threshold
         
         if non_silent.any():
@@ -119,13 +119,13 @@ class AudioProcessor:
         return audio
     
     def audio_to_mel(self, audio: torch.Tensor) -> torch.Tensor:
-        """Convertit l'audio en mél-spectrogramme"""
+        """Converts audio to a mel spectrogram."""
         return self.mel_transform(audio)
     
     def mel_to_audio(self, mel_spec: torch.Tensor) -> torch.Tensor:
-        """Convertit le mél-spectrogramme en audio (approximation)"""
-        # Cette fonction est une approximation simple
-        # En pratique, on utiliserait un vocoder comme HiFi-GAN
+        """Converts a mel spectrogram to audio as an approximation."""
+        # This function is a simple approximation
+        # In practice, a vocoder such as HiFi-GAN would be used
         mel_spec = torch.exp(mel_spec)
         
         # Inverse mel transform
@@ -151,19 +151,19 @@ class AudioProcessor:
 
 def extract_pitch(audio: torch.Tensor, sample_rate: int = 22050) -> torch.Tensor:
     """
-    Extrait le pitch (F0) d'un signal audio
-    
+    Extracts pitch (F0) from an audio signal.
+
     Args:
-        audio: Signal audio de forme (samples,)
-        sample_rate: Fréquence d'échantillonnage
-        
+        audio: Audio signal of shape (samples,).
+        sample_rate: Sampling rate.
+
     Returns:
-        pitch: Tensor de forme (time_frames,)
+        pitch: Tensor of shape (time_frames,).
     """
-    # Convertir en numpy pour librosa
+    # Convert to numpy for librosa
     audio_np = audio.numpy()
     
-    # Extraire F0 avec librosa
+    # Extract F0 with librosa
     f0, voiced_flag, voiced_probs = librosa.pyin(
         audio_np,
         fmin=librosa.note_to_hz('C2'),
@@ -172,14 +172,14 @@ def extract_pitch(audio: torch.Tensor, sample_rate: int = 22050) -> torch.Tensor
         hop_length=256
     )
     
-    # Remplacer NaN par 0
+    # Replace NaN values with 0
     f0 = np.nan_to_num(f0, nan=0.0)
     
     return torch.from_numpy(f0).float()
 
 
 def compute_spectral_centroid(audio: torch.Tensor, sample_rate: int = 22050) -> torch.Tensor:
-    """Calcule le centroïde spectral"""
+    """Computes the spectral centroid."""
     audio_np = audio.numpy()
     centroid = librosa.feature.spectral_centroid(
         y=audio_np, sr=sample_rate, hop_length=256

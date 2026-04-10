@@ -1,5 +1,5 @@
 """
-Utilitaires pour MulliVC
+Utilities for MulliVC.
 """
 from .audio_utils import MelSpectrogram, AudioProcessor, extract_pitch, compute_spectral_centroid
 from .data_utils import MulliVCDataset, create_dataloader

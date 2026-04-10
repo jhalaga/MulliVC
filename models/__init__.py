@@ -1,5 +1,5 @@
 """
-Modèles pour MulliVC
+Models for MulliVC.
 """
 from .content_encoder import ContentEncoder
 from .timbre_encoder import TimbreEncoder

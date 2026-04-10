@@ -1,5 +1,5 @@
 """
-Script de démonstration pour MulliVC
+Demo script for MulliVC
 """
 import torch
 import torchaudio
@@ -17,13 +17,13 @@ from utils.model_utils import print_model_summary, count_parameters
 
 
 class MulliVCDemo:
-    """Démonstration de MulliVC"""
+    """MulliVC demo."""
     
     def __init__(self, config_path: str, checkpoint_path: Optional[str] = None):
         self.config = load_config(config_path)
         self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
         
-        # Charger le modèle
+        # Load the model
         self.model = create_mullivc_model(config_path).to(self.device)
         
         if checkpoint_path:
@@ -38,7 +38,7 @@ class MulliVCDemo:
         self.audio_processor = AudioProcessor(self.config)
     
     def load_demo_audio(self, audio_path: str) -> torch.Tensor:
-        """Charge un audio de démonstration"""
+        """Loads demo audio."""
         if not os.path.exists(audio_path):
             print(f"Fichier audio non trouvé: {audio_path}")
             print("Génération d'un audio de démonstration...")
@@ -46,32 +46,32 @@ class MulliVCDemo:
         
         audio, sr = torchaudio.load(audio_path)
         
-        # Resample si nécessaire
+        # Resample if needed
         if sr != self.config['data']['sample_rate']:
             resampler = torchaudio.transforms.Resample(sr, self.config['data']['sample_rate'])
             audio = resampler(audio)
         
-        # Convertir en mono
+        # Convert to mono
         if audio.shape[0] > 1:
             audio = audio.mean(dim=0, keepdim=True)
         
         return audio.squeeze(0)
     
     def _generate_demo_audio(self, duration: float = 3.0) -> torch.Tensor:
-        """Génère un audio de démonstration"""
+        """Generates demo audio."""
         sample_rate = self.config['data']['sample_rate']
         samples = int(duration * sample_rate)
         
-        # Générer un signal sinusoïdal avec modulation
+        # Generate a sinusoidal signal with modulation
         t = torch.linspace(0, duration, samples)
-        frequency = 440.0  # La note A4
+        frequency = 440.0  # The A4 note
         audio = torch.sin(2 * np.pi * frequency * t)
         
-        # Ajouter de la modulation
+        # Add modulation
         modulation = 0.1 * torch.sin(2 * np.pi * 5 * t)
         audio = audio * (1 + modulation)
         
-        # Normaliser
+        # Normalize
         audio = audio / torch.abs(audio).max()
         
         return audio
@@ -82,15 +82,15 @@ class MulliVCDemo:
         target_speaker_audio_path: str,
         output_dir: str = "demo_output"
     ):
-        """Démontre la conversion vocale"""
+        """Demonstrates voice conversion."""
         print("=" * 60)
         print("DÉMONSTRATION DE CONVERSION VOCALE MULLIVC")
         print("=" * 60)
         
-        # Créer le dossier de sortie
+        # Create the output directory
         os.makedirs(output_dir, exist_ok=True)
         
-        # Charger les audios
+        # Load audio
         print("Chargement des audios...")
         source_audio = self.load_demo_audio(source_audio_path)
         target_audio = self.load_demo_audio(target_speaker_audio_path)
@@ -98,7 +98,7 @@ class MulliVCDemo:
         print(f"Audio source: {source_audio.shape}")
         print(f"Audio cible: {target_audio.shape}")
         
-        # Ajouter dimension batch
+        # Add batch dimension
         source_audio = source_audio.unsqueeze(0).to(self.device)
         target_audio = target_audio.unsqueeze(0).to(self.device)
         
@@ -110,26 +110,26 @@ class MulliVCDemo:
         
         print(f"Mél-spectrogramme généré: {generated_mel.shape}")
         
-        # Convertir en audio
+        # Convert to audio
         print("Conversion en audio...")
         generated_audio = self.audio_processor.mel_to_audio(generated_mel.squeeze(0))
         
-        # Sauvegarder les résultats
+        # Save results
         print("Sauvegarde des résultats...")
         
         # Audio source
         source_path = os.path.join(output_dir, "source.wav")
         torchaudio.save(source_path, source_audio.squeeze(0).cpu(), self.config['data']['sample_rate'])
         
-        # Audio cible
+        # Target audio
         target_path = os.path.join(output_dir, "target.wav")
         torchaudio.save(target_path, target_audio.squeeze(0).cpu(), self.config['data']['sample_rate'])
         
-        # Audio converti
+        # Converted audio
         converted_path = os.path.join(output_dir, "converted.wav")
         torchaudio.save(converted_path, generated_audio.cpu(), self.config['data']['sample_rate'])
         
-        # Visualisations
+        # Visualizations
         self._create_visualizations(
             source_audio.squeeze(0).cpu(),
             target_audio.squeeze(0).cpu(),
@@ -151,7 +151,7 @@ class MulliVCDemo:
         outputs: dict,
         output_dir: str
     ):
-        """Crée des visualisations"""
+        """Creates visualizations."""
         print("Création des visualisations...")
         
         # Waveforms
@@ -162,12 +162,12 @@ class MulliVCDemo:
         axes[0].set_title('Audio Source')
         axes[0].set_ylabel('Amplitude')
         
-        # Audio cible
+        # Target audio
         axes[1].plot(target_audio.numpy())
         axes[1].set_title('Audio Cible (Timbre)')
         axes[1].set_ylabel('Amplitude')
         
-        # Audio converti
+        # Converted audio
         axes[2].plot(converted_audio.numpy())
         axes[2].set_title('Audio Converti')
         axes[2].set_ylabel('Amplitude')
@@ -177,7 +177,7 @@ class MulliVCDemo:
         plt.savefig(os.path.join(output_dir, 'waveforms.png'), dpi=300, bbox_inches='tight')
         plt.close()
         
-        # Mél-spectrogrammes
+        # Mel spectrograms
         fig, axes = plt.subplots(1, 3, figsize=(15, 5))
         
         # Source
@@ -186,12 +186,12 @@ class MulliVCDemo:
         axes[0].set_title('Mél-spectrogramme Source')
         axes[0].set_ylabel('Bandes de fréquence')
         
-        # Cible
+        # Target
         target_mel = self.audio_processor.audio_to_mel(target_audio.unsqueeze(0))
         im2 = axes[1].imshow(target_mel.squeeze(0).numpy(), aspect='auto', origin='lower')
         axes[1].set_title('Mél-spectrogramme Cible')
         
-        # Converti
+        # Converted
         im3 = axes[2].imshow(outputs['generated_mel'].squeeze(0).cpu().numpy(), aspect='auto', origin='lower')
         axes[2].set_title('Mél-spectrogramme Converti')
         axes[2].set_xlabel('Frames temporelles')
@@ -208,15 +208,15 @@ class MulliVCDemo:
         target_audio_path: str,
         output_dir: str = "demo_cross_lingual"
     ):
-        """Démontre la conversion cross-linguale"""
+        """Demonstrates cross-lingual conversion."""
         print("=" * 60)
         print("DÉMONSTRATION DE CONVERSION CROSS-LINGUALE")
         print("=" * 60)
         
-        # Créer le dossier de sortie
+        # Create the output directory
         os.makedirs(output_dir, exist_ok=True)
         
-        # Charger les audios
+        # Load audio
         print("Chargement des audios...")
         source_audio = self.load_demo_audio(source_audio_path)
         target_audio = self.load_demo_audio(target_audio_path)
@@ -230,25 +230,25 @@ class MulliVCDemo:
             )
             generated_mel = outputs['generated_mel']
         
-        # Convertir en audio
+        # Convert to audio
         generated_audio = self.audio_processor.mel_to_audio(generated_mel.squeeze(0))
         
-        # Sauvegarder
+        # Save
         converted_path = os.path.join(output_dir, "cross_lingual_converted.wav")
         torchaudio.save(converted_path, generated_audio.cpu(), self.config['data']['sample_rate'])
         
         print(f"Conversion cross-linguale terminée: {converted_path}")
     
     def analyze_model(self):
-        """Analyse le modèle"""
+        """Analyzes the model."""
         print("=" * 60)
         print("ANALYSE DU MODÈLE MULLIVC")
         print("=" * 60)
         
-        # Résumé du modèle
+        # Model summary
         print_model_summary(self.model)
         
-        # Analyser chaque composant
+        # Analyze each component
         print("\n" + "=" * 60)
         print("ANALYSE DES COMPOSANTS")
         print("=" * 60)
@@ -268,16 +268,16 @@ class MulliVCDemo:
             print(f"  Paramètres entraînables: {params['trainable']:,}")
     
     def benchmark_inference(self, num_runs: int = 10):
-        """Benchmark de l'inférence"""
+        """Benchmarks inference."""
         print("=" * 60)
         print("BENCHMARK D'INFÉRENCE")
         print("=" * 60)
         
-        # Générer des audios de test
+        # Generate test audio
         source_audio = self._generate_demo_audio(2.0).unsqueeze(0).to(self.device)
         target_audio = self._generate_demo_audio(2.0).unsqueeze(0).to(self.device)
         
-        # Mesurer le temps d'inférence
+        # Measure inference time
         import time
         
         times = []
@@ -293,7 +293,7 @@ class MulliVCDemo:
             
             print(f"Run {i+1}/{num_runs}: {inference_time:.3f}s")
         
-        # Statistiques
+        # Statistics
         avg_time = np.mean(times)
         std_time = np.std(times)
         min_time = np.min(times)
@@ -328,18 +328,18 @@ def main():
     
     args = parser.parse_args()
     
-    # Créer la démonstration
+    # Create the demo
     demo = MulliVCDemo(args.config, args.checkpoint)
     
-    # Analyser le modèle si demandé
+    # Analyze the model if requested
     if args.analyze:
         demo.analyze_model()
     
-    # Benchmark si demandé
+    # Benchmark if requested
     if args.benchmark:
         demo.benchmark_inference()
     
-    # Démonstration de conversion
+    # Conversion demo
     if args.source_audio or args.target_audio:
         source_path = args.source_audio or "demo_source.wav"
         target_path = args.target_audio or "demo_target.wav"

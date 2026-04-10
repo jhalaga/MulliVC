@@ -1,5 +1,5 @@
 """
-Script de test pour vérifier que le système MulliVC fonctionne correctement
+Test script to verify that the MulliVC system works correctly.
 """
 import torch
 import torch.nn as nn
@@ -8,7 +8,7 @@ import os
 import sys
 from typing import Dict, Any
 
-# Ajouter le répertoire racine au path
+# Add the project root to the path
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
 from models.mullivc import MulliVC, create_mullivc_model
@@ -18,7 +18,7 @@ from utils.model_utils import count_parameters, print_model_summary
 
 
 def test_imports():
-    """Teste que tous les imports fonctionnent"""
+    """Tests that all imports work."""
     print("Test des imports...")
     
     try:
@@ -53,14 +53,14 @@ def test_imports():
 
 
 def test_config_loading():
-    """Teste le chargement de la configuration"""
+    """Tests configuration loading."""
     print("\nTest du chargement de configuration...")
     
     try:
         config = load_config('configs/mullivc_config.yaml')
         print("✓ Configuration chargée avec succès")
         
-        # Vérifier les sections principales
+        # Check the main sections
         required_sections = ['data', 'model', 'training', 'paths']
         for section in required_sections:
             if section in config:
@@ -76,18 +76,18 @@ def test_config_loading():
 
 
 def test_model_creation():
-    """Teste la création du modèle"""
+    """Tests model creation."""
     print("\nTest de création du modèle...")
     
     try:
-        # Charger la configuration
+        # Load the configuration
         config = load_config('configs/mullivc_config.yaml')
         
-        # Créer le modèle
+        # Create the model
         model = create_mullivc_model('configs/mullivc_config.yaml')
         print("✓ Modèle créé avec succès")
         
-        # Vérifier les composants
+        # Check components
         components = [
             'content_encoder',
             'timbre_encoder', 
@@ -110,21 +110,21 @@ def test_model_creation():
 
 
 def test_model_forward():
-    """Teste le forward pass du modèle"""
+    """Tests the model forward pass."""
     print("\nTest du forward pass...")
     
     try:
-        # Créer le modèle
+        # Create the model
         model = create_mullivc_model('configs/mullivc_config.yaml')
         model.eval()
         
-        # Créer des données de test
+        # Create test data
         batch_size = 2
         seq_len = 1000
         n_mel_channels = 80
         time_frames = 100
         
-        # Audio de test
+        # Test audio
         source_audio = torch.randn(batch_size, seq_len)
         target_audio = torch.randn(batch_size, seq_len)
         
@@ -132,7 +132,7 @@ def test_model_forward():
         with torch.no_grad():
             outputs = model.forward(source_audio, target_audio)
         
-        # Vérifier les sorties
+        # Check outputs
         expected_outputs = [
             'generated_mel',
             'content_features', 
@@ -156,20 +156,20 @@ def test_model_forward():
 
 
 def test_audio_processing():
-    """Teste le traitement audio"""
+    """Tests audio processing."""
     print("\nTest du traitement audio...")
     
     try:
         config = load_config('configs/mullivc_config.yaml')
         audio_processor = AudioProcessor(config)
         
-        # Créer un audio de test
+        # Create test audio
         sample_rate = config['data']['sample_rate']
         duration = 2.0
         samples = int(sample_rate * duration)
         audio = torch.randn(samples)
         
-        # Test de conversion en mél-spectrogramme
+        # Test mel spectrogram conversion
         mel_spec = audio_processor.audio_to_mel(audio)
         print(f"✓ Mél-spectrogramme généré: {mel_spec.shape}")
         
@@ -184,14 +184,14 @@ def test_audio_processing():
 
 
 def test_loss_computation():
-    """Teste le calcul des pertes"""
+    """Tests loss computation."""
     print("\nTest du calcul des pertes...")
     
     try:
         config = load_config('configs/mullivc_config.yaml')
         model = create_mullivc_model('configs/mullivc_config.yaml')
         
-        # Créer des données de test
+        # Create test data
         batch_size = 2
         seq_len = 1000
         n_mel_channels = 80
@@ -204,7 +204,7 @@ def test_loss_computation():
         with torch.no_grad():
             outputs = model.forward(source_audio, target_audio)
         
-        # Créer les cibles
+        # Create targets
         targets = {
             'target_mel': torch.randn(batch_size, n_mel_channels, time_frames),
             'target_timbre': torch.randn(batch_size, 256),
@@ -212,10 +212,10 @@ def test_loss_computation():
             'target_voiced': torch.randn(batch_size, time_frames)
         }
         
-        # Calculer les pertes
+        # Compute losses
         losses = model.compute_losses(outputs, targets, is_real=True)
         
-        # Vérifier les pertes
+        # Check losses
         expected_losses = ['total', 'reconstruction', 'timbre', 'pitch', 'adversarial', 'asr']
         for loss_name in expected_losses:
             if loss_name in losses:
@@ -231,19 +231,19 @@ def test_loss_computation():
 
 
 def test_model_parameters():
-    """Teste les paramètres du modèle"""
+    """Tests model parameters."""
     print("\nTest des paramètres du modèle...")
     
     try:
         model = create_mullivc_model('configs/mullivc_config.yaml')
         
-        # Compter les paramètres
+        # Count parameters
         param_counts = count_parameters(model)
         print(f"✓ Paramètres totaux: {param_counts['total']:,}")
         print(f"✓ Paramètres entraînables: {param_counts['trainable']:,}")
         print(f"✓ Paramètres non-entraînables: {param_counts['non_trainable']:,}")
         
-        # Vérifier que le modèle a des paramètres
+        # Verify that the model has parameters
         if param_counts['total'] > 0:
             print("✓ Modèle a des paramètres")
         else:
@@ -257,27 +257,27 @@ def test_model_parameters():
 
 
 def test_gradient_flow():
-    """Teste le flux des gradients"""
+    """Tests gradient flow."""
     print("\nTest du flux des gradients...")
     
     try:
         model = create_mullivc_model('configs/mullivc_config.yaml')
         model.train()
         
-        # Créer des données de test
+        # Create test data
         source_audio = torch.randn(2, 1000, requires_grad=True)
         target_audio = torch.randn(2, 1000, requires_grad=True)
         
         # Forward pass
         outputs = model.forward(source_audio, target_audio)
         
-        # Calculer une perte simple
+        # Compute a simple loss
         loss = outputs['generated_mel'].mean()
         
         # Backward pass
         loss.backward()
         
-        # Vérifier que les gradients existent
+        # Verify that gradients exist
         has_gradients = False
         for param in model.parameters():
             if param.grad is not None:
@@ -297,7 +297,7 @@ def test_gradient_flow():
 
 
 def run_all_tests():
-    """Exécute tous les tests"""
+    """Runs all tests."""
     print("=" * 60)
     print("TESTS DU SYSTÈME MULLIVC")
     print("=" * 60)

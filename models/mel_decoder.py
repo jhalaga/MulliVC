@@ -1,5 +1,5 @@
 """
-Mel Decoder pour générer les mél-spectrogrammes à partir des features de contenu et de timbre
+Mel Decoder for generating mel spectrograms from content and timbre features.
 """
 import torch
 import torch.nn as nn
@@ -9,8 +9,8 @@ from typing import Optional, Tuple
 
 class MelDecoder(nn.Module):
     """
-    Mel Decoder qui génère les mél-spectrogrammes à partir des features
-    de contenu et de timbre
+    Mel Decoder that generates mel spectrograms from content
+    and timbre features.
     """
     
     def __init__(
@@ -35,7 +35,7 @@ class MelDecoder(nn.Module):
             nn.Dropout(dropout)
         )
         
-        # Couches de transformation
+        # Transformation layers
         self.transformer_layers = nn.ModuleList([
             nn.TransformerEncoderLayer(
                 d_model=hidden_dim,
@@ -46,7 +46,7 @@ class MelDecoder(nn.Module):
             ) for _ in range(num_layers)
         ])
         
-        # Couches de convolution pour la génération
+        # Convolution layers for generation
         self.conv_layers = nn.ModuleList([
             nn.Sequential(
                 nn.Conv1d(
@@ -69,7 +69,7 @@ class MelDecoder(nn.Module):
             nn.Linear(hidden_dim // 2, output_dim)
         )
         
-        # Activation finale
+        # Final activation
         self.output_activation = nn.Tanh()
     
     def forward(
@@ -79,27 +79,27 @@ class MelDecoder(nn.Module):
         mask: Optional[torch.Tensor] = None
     ) -> torch.Tensor:
         """
-        Génère les mél-spectrogrammes à partir des features
-        
+        Generates mel spectrograms from features.
+
         Args:
-            content_features: Tensor de forme (batch_size, seq_len, content_dim)
-            timbre_features: Tensor de forme (batch_size, seq_len, timbre_dim)
-            mask: Masque d'attention optionnel
-            
+            content_features: Tensor of shape (batch_size, seq_len, content_dim).
+            timbre_features: Tensor of shape (batch_size, seq_len, timbre_dim).
+            mask: Optional attention mask.
+
         Returns:
-            mel_spec: Tensor de forme (batch_size, seq_len, n_mel_channels)
+            mel_spec: Tensor of shape (batch_size, seq_len, n_mel_channels).
         """
-        # Concaténer les features de contenu et de timbre
+        # Concatenate content and timbre features
         combined_features = torch.cat([content_features, timbre_features], dim=-1)
         
         # Input projection
         x = self.input_projection(combined_features)
         
-        # Appliquer les couches de transformation
+        # Apply transformation layers
         for transformer_layer in self.transformer_layers:
             x = transformer_layer(x, src_key_padding_mask=mask)
         
-        # Appliquer les couches de convolution
+        # Apply convolution layers
         x = x.transpose(1, 2)  # (batch_size, hidden_dim, seq_len)
         
         for conv_layer in self.conv_layers:
@@ -116,8 +116,8 @@ class MelDecoder(nn.Module):
 
 class ConditionalMelDecoder(nn.Module):
     """
-    Mel Decoder conditionnel qui utilise des informations supplémentaires
-    comme le pitch et les caractéristiques du locuteur
+    Conditional Mel Decoder that uses additional information
+    such as pitch and speaker characteristics.
     """
     
     def __init__(
@@ -139,13 +139,13 @@ class ConditionalMelDecoder(nn.Module):
         self.hidden_dim = hidden_dim
         self.output_dim = output_dim
         
-        # Projections pour chaque type de feature
+        # Projections for each feature type
         self.content_projection = nn.Linear(content_dim, hidden_dim // 4)
         self.timbre_projection = nn.Linear(timbre_dim, hidden_dim // 4)
         self.pitch_projection = nn.Linear(pitch_dim, hidden_dim // 4)
         self.speaker_projection = nn.Linear(speaker_dim, hidden_dim // 4)
         
-        # Fusion des features
+        # Feature fusion
         self.feature_fusion = nn.Sequential(
             nn.Linear(hidden_dim, hidden_dim),
             nn.ReLU(),
@@ -153,7 +153,7 @@ class ConditionalMelDecoder(nn.Module):
             nn.Linear(hidden_dim, hidden_dim)
         )
         
-        # Decoder principal
+        # Main decoder
         self.decoder = MelDecoder(
             input_dim=hidden_dim,
             hidden_dim=hidden_dim,
@@ -170,28 +170,28 @@ class ConditionalMelDecoder(nn.Module):
         mask: Optional[torch.Tensor] = None
     ) -> torch.Tensor:
         """
-        Génère les mél-spectrogrammes avec des conditions supplémentaires
-        
+        Generates mel spectrograms with additional conditions.
+
         Args:
-            content_features: Tensor de forme (batch_size, seq_len, content_dim)
-            timbre_features: Tensor de forme (batch_size, seq_len, timbre_dim)
-            pitch_features: Tensor de forme (batch_size, seq_len, pitch_dim)
-            speaker_features: Tensor de forme (batch_size, speaker_dim)
-            mask: Masque d'attention optionnel
-            
+            content_features: Tensor of shape (batch_size, seq_len, content_dim).
+            timbre_features: Tensor of shape (batch_size, seq_len, timbre_dim).
+            pitch_features: Tensor of shape (batch_size, seq_len, pitch_dim).
+            speaker_features: Tensor of shape (batch_size, speaker_dim).
+            mask: Optional attention mask.
+
         Returns:
-            mel_spec: Tensor de forme (batch_size, seq_len, n_mel_channels)
+            mel_spec: Tensor of shape (batch_size, seq_len, n_mel_channels).
         """
         # Projections
         content_proj = self.content_projection(content_features)
         timbre_proj = self.timbre_projection(timbre_features)
         pitch_proj = self.pitch_projection(pitch_features)
         
-        # Étendre les features de locuteur
+        # Expand speaker features
         speaker_proj = self.speaker_projection(speaker_features)
         speaker_proj = speaker_proj.unsqueeze(1).expand(-1, content_features.shape[1], -1)
         
-        # Fusionner toutes les features
+        # Merge all features
         combined_features = torch.cat([
             content_proj, timbre_proj, pitch_proj, speaker_proj
         ], dim=-1)
@@ -199,7 +199,7 @@ class ConditionalMelDecoder(nn.Module):
         # Fusion
         fused_features = self.feature_fusion(combined_features)
         
-        # Décoder
+        # Decode
         mel_spec = self.decoder(fused_features, fused_features, mask)
         
         return mel_spec
@@ -207,7 +207,7 @@ class ConditionalMelDecoder(nn.Module):
 
 class MultiScaleMelDecoder(nn.Module):
     """
-    Mel Decoder multi-échelle qui génère des spectrogrammes à différentes résolutions
+    Multi-scale Mel Decoder that generates spectrograms at different resolutions.
     """
     
     def __init__(
@@ -221,7 +221,7 @@ class MultiScaleMelDecoder(nn.Module):
         
         self.num_scales = num_scales
         
-        # Decoders pour différentes échelles
+        # Decoders for different scales
         self.scale_decoders = nn.ModuleList([
             MelDecoder(
                 input_dim=input_dim,
@@ -231,7 +231,7 @@ class MultiScaleMelDecoder(nn.Module):
             ) for _ in range(num_scales)
         ])
         
-        # Fusion des échelles
+        # Scale fusion
         self.scale_fusion = nn.Sequential(
             nn.Linear(output_dim * num_scales, output_dim * 2),
             nn.ReLU(),
@@ -245,22 +245,22 @@ class MultiScaleMelDecoder(nn.Module):
         mask: Optional[torch.Tensor] = None
     ) -> torch.Tensor:
         """
-        Génère des mél-spectrogrammes multi-échelles
-        
+        Generates multi-scale mel spectrograms.
+
         Args:
-            content_features: Tensor de forme (batch_size, seq_len, content_dim)
-            timbre_features: Tensor de forme (batch_size, seq_len, timbre_dim)
-            mask: Masque d'attention optionnel
-            
+            content_features: Tensor of shape (batch_size, seq_len, content_dim).
+            timbre_features: Tensor of shape (batch_size, seq_len, timbre_dim).
+            mask: Optional attention mask.
+
         Returns:
-            mel_spec: Tensor de forme (batch_size, seq_len, n_mel_channels)
+            mel_spec: Tensor of shape (batch_size, seq_len, n_mel_channels).
         """
         scale_outputs = []
         
-        # Générer à différentes échelles
+        # Generate at different scales
         for i, decoder in enumerate(self.scale_decoders):
             if i > 0:
-                # Downsample pour les échelles plus petites
+                # Downsample for smaller scales
                 scale_factor = 2 ** i
                 downsampled_content = F.avg_pool1d(
                     content_features.transpose(1, 2),
@@ -274,10 +274,10 @@ class MultiScaleMelDecoder(nn.Module):
                 downsampled_content = content_features
                 downsampled_timbre = timbre_features
             
-            # Décoder cette échelle
+            # Decode this scale
             scale_output = decoder(downsampled_content, downsampled_timbre, mask)
             
-            # Upsample si nécessaire
+            # Upsample if needed
             if i > 0:
                 scale_output = F.interpolate(
                     scale_output.transpose(1, 2),
@@ -288,7 +288,7 @@ class MultiScaleMelDecoder(nn.Module):
             
             scale_outputs.append(scale_output)
         
-        # Fusionner les échelles
+        # Merge scales
         concatenated = torch.cat(scale_outputs, dim=-1)
         mel_spec = self.scale_fusion(concatenated)
         
@@ -297,7 +297,7 @@ class MultiScaleMelDecoder(nn.Module):
 
 class AdversarialMelDecoder(nn.Module):
     """
-    Mel Decoder avec composant adversarial pour améliorer la qualité
+    Mel Decoder with an adversarial component to improve quality.
     """
     
     def __init__(
@@ -309,7 +309,7 @@ class AdversarialMelDecoder(nn.Module):
     ):
         super().__init__()
         
-        # Decoder principal
+        # Main decoder
         self.decoder = MelDecoder(
             input_dim=input_dim,
             hidden_dim=hidden_dim,
@@ -317,7 +317,7 @@ class AdversarialMelDecoder(nn.Module):
             num_layers=num_layers
         )
         
-        # Composant adversarial
+        # Adversarial component
         self.adversarial_head = nn.Sequential(
             nn.Linear(output_dim, hidden_dim // 2),
             nn.ReLU(),
@@ -334,24 +334,24 @@ class AdversarialMelDecoder(nn.Module):
         return_adversarial: bool = False
     ) -> Tuple[torch.Tensor, Optional[torch.Tensor]]:
         """
-        Génère les mél-spectrogrammes avec score adversarial
-        
+        Generates mel spectrograms with an adversarial score.
+
         Args:
-            content_features: Tensor de forme (batch_size, seq_len, content_dim)
-            timbre_features: Tensor de forme (batch_size, seq_len, timbre_dim)
-            mask: Masque d'attention optionnel
-            return_adversarial: Si True, retourne le score adversarial
-            
+            content_features: Tensor of shape (batch_size, seq_len, content_dim).
+            timbre_features: Tensor of shape (batch_size, seq_len, timbre_dim).
+            mask: Optional attention mask.
+            return_adversarial: If True, returns the adversarial score.
+
         Returns:
-            mel_spec: Tensor de forme (batch_size, seq_len, n_mel_channels)
-            adversarial_score: Score adversarial si return_adversarial=True
+            mel_spec: Tensor of shape (batch_size, seq_len, n_mel_channels).
+            adversarial_score: Adversarial score if return_adversarial=True.
         """
-        # Générer le mél-spectrogramme
+        # Generate the mel spectrogram
         mel_spec = self.decoder(content_features, timbre_features, mask)
         
         adversarial_score = None
         if return_adversarial:
-            # Calculer le score adversarial
+            # Compute the adversarial score
             adversarial_score = self.adversarial_head(mel_spec)
             adversarial_score = adversarial_score.mean(dim=1)  # (batch_size, 1)
         

@@ -1,5 +1,5 @@
 """
-Utilitaires pour les modèles
+Utilities for models.
 """
 import torch
 import torch.nn as nn
@@ -10,17 +10,17 @@ import yaml
 
 def load_pretrained_models(config: Dict[str, Any]) -> Dict[str, nn.Module]:
     """
-    Charge les modèles pré-entraînés nécessaires
-    
+    Loads the required pretrained models.
+
     Args:
-        config: Configuration du modèle
-        
+        config: Model configuration.
+
     Returns:
-        models: Dictionnaire des modèles chargés
+        models: Dictionary of loaded models.
     """
     models = {}
     
-    # Charger WavLM pour le content encoder
+    # Load WavLM for the content encoder
     try:
         from transformers import WavLMModel
         models['wavlm'] = WavLMModel.from_pretrained("microsoft/wavlm-base")
@@ -28,7 +28,7 @@ def load_pretrained_models(config: Dict[str, Any]) -> Dict[str, nn.Module]:
     except Exception as e:
         print(f"Erreur lors du chargement de WavLM: {e}")
     
-    # Charger le modèle de vérification vocale
+    # Load the speaker verification model
     try:
         import speechbrain as sb
         from speechbrain.pretrained import EncoderClassifier
@@ -40,7 +40,7 @@ def load_pretrained_models(config: Dict[str, Any]) -> Dict[str, nn.Module]:
     except Exception as e:
         print(f"Erreur lors du chargement du modèle de vérification: {e}")
     
-    # Charger Whisper pour l'ASR
+    # Load Whisper for ASR
     try:
         import whisper
         models['whisper'] = whisper.load_model("base")
@@ -61,16 +61,16 @@ def save_checkpoint(
     config: Optional[Dict[str, Any]] = None
 ):
     """
-    Sauvegarde un checkpoint du modèle
-    
+    Saves a model checkpoint.
+
     Args:
-        model: Modèle à sauvegarder
-        optimizer: Optimiseur
-        epoch: Numéro d'époque
-        step: Numéro d'étape
-        loss: Perte actuelle
-        path: Chemin de sauvegarde
-        config: Configuration optionnelle
+        model: Model to save.
+        optimizer: Optimizer.
+        epoch: Epoch number.
+        step: Step number.
+        loss: Current loss.
+        path: Save path.
+        config: Optional configuration.
     """
     checkpoint = {
         'epoch': epoch,
@@ -81,10 +81,10 @@ def save_checkpoint(
         'config': config
     }
     
-    # Créer le dossier si nécessaire
+    # Create the directory if needed
     os.makedirs(os.path.dirname(path), exist_ok=True)
     
-    # Sauvegarder
+    # Save
     torch.save(checkpoint, path)
     print(f"Checkpoint sauvegardé: {path}")
 
@@ -95,22 +95,22 @@ def load_checkpoint(
     path: str
 ) -> Dict[str, Any]:
     """
-    Charge un checkpoint du modèle
-    
+    Loads a model checkpoint.
+
     Args:
-        model: Modèle à charger
-        optimizer: Optimiseur optionnel
-        path: Chemin du checkpoint
-        
+        model: Model to load.
+        optimizer: Optional optimizer.
+        path: Checkpoint path.
+
     Returns:
-        checkpoint_info: Informations du checkpoint
+        checkpoint_info: Checkpoint information.
     """
     checkpoint = torch.load(path, map_location='cpu')
     
-    # Charger l'état du modèle
+    # Load the model state
     model.load_state_dict(checkpoint['model_state_dict'])
     
-    # Charger l'état de l'optimiseur si fourni
+    # Load the optimizer state if provided
     if optimizer is not None and 'optimizer_state_dict' in checkpoint:
         optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
     
@@ -129,13 +129,13 @@ def load_checkpoint(
 
 def count_parameters(model: nn.Module) -> Dict[str, int]:
     """
-    Compte le nombre de paramètres du modèle
-    
+    Counts the number of model parameters.
+
     Args:
-        model: Modèle à analyser
-        
+        model: Model to analyze.
+
     Returns:
-        param_counts: Dictionnaire des comptes de paramètres
+        param_counts: Dictionary of parameter counts.
     """
     total_params = sum(p.numel() for p in model.parameters())
     trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
@@ -151,16 +151,16 @@ def count_parameters(model: nn.Module) -> Dict[str, int]:
 
 def print_model_summary(model: nn.Module):
     """
-    Affiche un résumé du modèle
-    
+    Prints a model summary.
+
     Args:
-        model: Modèle à analyser
+        model: Model to analyze.
     """
     print("=" * 50)
     print("RÉSUMÉ DU MODÈLE")
     print("=" * 50)
     
-    # Compter les paramètres
+    # Count parameters
     param_counts = count_parameters(model)
     
     print(f"Paramètres totaux: {param_counts['total']:,}")
@@ -171,7 +171,7 @@ def print_model_summary(model: nn.Module):
     print("ARCHITECTURE")
     print("=" * 50)
     
-    # Afficher l'architecture
+    # Display the architecture
     for name, module in model.named_children():
         module_params = sum(p.numel() for p in module.parameters())
         print(f"{name}: {module_params:,} paramètres")
@@ -181,11 +181,11 @@ def print_model_summary(model: nn.Module):
 
 def freeze_parameters(model: nn.Module, freeze: bool = True):
     """
-    Gèle ou dégèle les paramètres du modèle
-    
+    Freezes or unfreezes model parameters.
+
     Args:
-        model: Modèle à modifier
-        freeze: Si True, gèle les paramètres
+        model: Model to modify.
+        freeze: If True, freezes parameters.
     """
     for param in model.parameters():
         param.requires_grad = not freeze
@@ -196,11 +196,11 @@ def freeze_parameters(model: nn.Module, freeze: bool = True):
 
 def initialize_weights(model: nn.Module, init_type: str = 'xavier'):
     """
-    Initialise les poids du modèle
-    
+    Initializes model weights.
+
     Args:
-        model: Modèle à initialiser
-        init_type: Type d'initialisation ('xavier', 'kaiming', 'normal')
+        model: Model to initialize.
+        init_type: Initialization type ('xavier', 'kaiming', 'normal').
     """
     def init_weights(m):
         if isinstance(m, nn.Linear):
@@ -235,18 +235,18 @@ def initialize_weights(model: nn.Module, init_type: str = 'xavier'):
 
 def get_model_size(model: nn.Module) -> Dict[str, float]:
     """
-    Calcule la taille du modèle en MB
-    
+    Computes model size in MB.
+
     Args:
-        model: Modèle à analyser
-        
+        model: Model to analyze.
+
     Returns:
-        size_info: Informations sur la taille
+        size_info: Size information.
     """
-    # Compter les paramètres
+    # Count parameters
     param_counts = count_parameters(model)
     
-    # Estimer la taille (4 bytes par paramètre float32)
+    # Estimate size (4 bytes per float32 parameter)
     size_bytes = param_counts['total'] * 4
     
     size_info = {
@@ -261,18 +261,18 @@ def get_model_size(model: nn.Module) -> Dict[str, float]:
 
 def compare_models(model1: nn.Module, model2: nn.Module) -> Dict[str, Any]:
     """
-    Compare deux modèles
-    
+    Compares two models.
+
     Args:
-        model1: Premier modèle
-        model2: Deuxième modèle
-        
+        model1: First model.
+        model2: Second model.
+
     Returns:
-        comparison: Résultats de la comparaison
+        comparison: Comparison results.
     """
     comparison = {}
     
-    # Compter les paramètres
+    # Count parameters
     params1 = count_parameters(model1)
     params2 = count_parameters(model2)
     

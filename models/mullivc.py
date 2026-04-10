@@ -1,5 +1,5 @@
 """
-Modèle principal MulliVC
+Main MulliVC model.
 """
 import torch
 import torch.nn as nn
@@ -16,7 +16,7 @@ from .losses import CombinedLoss
 
 class MulliVC(nn.Module):
     """
-    Modèle principal MulliVC pour la conversion vocale multilingue
+    Main MulliVC model for multilingual voice conversion.
     """
     
     def __init__(self, config: dict):
@@ -24,7 +24,7 @@ class MulliVC(nn.Module):
         
         self.config = config
         
-        # Initialiser les composants
+        # Initialize components
         self.content_encoder = ContentEncoder(
             model_name=config['model']['content_encoder']['model_name'],
             hidden_size=config['model']['content_encoder']['hidden_size'],
@@ -71,25 +71,25 @@ class MulliVC(nn.Module):
         target_timbre_mel: Optional[torch.Tensor] = None
     ) -> Dict[str, torch.Tensor]:
         """
-        Forward pass du modèle MulliVC
-        
+        Forward pass of the MulliVC model.
+
         Args:
-            source_audio: Audio source (batch_size, samples)
-            target_timbre_audio: Audio cible pour le timbre (batch_size, samples)
-            source_mel: Mél-spectrogramme source optionnel
-            target_timbre_mel: Mél-spectrogramme cible optionnel
-            
+            source_audio: Source audio of shape (batch_size, samples).
+            target_timbre_audio: Target audio for timbre of shape (batch_size, samples).
+            source_mel: Optional source mel spectrogram.
+            target_timbre_mel: Optional target mel spectrogram.
+
         Returns:
-            outputs: Dictionnaire contenant toutes les sorties
+            outputs: Dictionary containing all outputs.
         """
-        # Encoder le contenu de l'audio source
+        # Encode source audio content
         content_features, content_pooled = self.content_encoder(source_audio)
         
-        # Encoder le timbre de l'audio cible
+        # Encode target audio timbre
         if target_timbre_mel is not None:
             timbre_features = self.timbre_encoder.extract_timbre_features(target_timbre_mel)
         else:
-            # Générer le mél-spectrogramme si non fourni
+            # Generate the mel spectrogram if not provided
             target_timbre_mel = self._audio_to_mel(target_timbre_audio)
             timbre_features = self.timbre_encoder.extract_timbre_features(target_timbre_mel)
         
@@ -99,10 +99,10 @@ class MulliVC(nn.Module):
             content_features
         )
         
-        # Générer le mél-spectrogramme
+        # Generate the mel spectrogram
         generated_mel = self.mel_decoder(content_features, fine_grained_timbre)
         
-        # Discriminateur
+        # Discriminator
         discriminator_output, _ = self.discriminator(generated_mel)
         
         outputs = {
@@ -118,14 +118,14 @@ class MulliVC(nn.Module):
         return outputs
     
     def _audio_to_mel(self, audio: torch.Tensor) -> torch.Tensor:
-        """Convertit l'audio en mél-spectrogramme"""
-        # Cette fonction devrait utiliser le même transformateur que dans audio_utils
-        # Pour l'instant, on utilise un placeholder
+        """Converts audio to a mel spectrogram."""
+        # This function should use the same transform as in audio_utils
+        # For now, a placeholder is used
         batch_size, samples = audio.shape
         n_mel_channels = self.config['data']['n_mel_channels']
         time_frames = samples // 256  # Approximation
         
-        # Placeholder - à remplacer par le vrai transformateur
+        # Placeholder - to be replaced with the real transform
         mel_spec = torch.randn(batch_size, n_mel_channels, time_frames, device=audio.device)
         
         return mel_spec
@@ -137,15 +137,15 @@ class MulliVC(nn.Module):
         is_real: bool = True
     ) -> Dict[str, torch.Tensor]:
         """
-        Calcule toutes les pertes
-        
+        Computes all losses.
+
         Args:
-            outputs: Sorties du modèle
-            targets: Cibles pour le calcul des pertes
-            is_real: Si True, cible pour les vrais échantillons
-            
+            outputs: Model outputs.
+            targets: Targets for loss computation.
+            is_real: If True, uses the target for real samples.
+
         Returns:
-            losses: Dictionnaire des pertes
+            losses: Dictionary of losses.
         """
         losses = self.loss_fn(
             predicted_mel=outputs['generated_mel'],
@@ -170,25 +170,25 @@ class MulliVC(nn.Module):
         step: int
     ) -> Dict[str, torch.Tensor]:
         """
-        Une étape d'entraînement complète avec les 3 sous-étapes
-        
+        A full training step with the three sub-steps.
+
         Args:
-            batch: Batch de données
-            step: Numéro d'étape
-            
+            batch: Data batch.
+            step: Step number.
+
         Returns:
-            losses: Dictionnaire des pertes
+            losses: Dictionary of losses.
         """
-        # Étape 1: Entraînement standard (monolingue)
+        # Stage 1: Standard training (monolingual)
         step1_losses = self._training_step_1(batch)
         
-        # Étape 2: Conversion croisée simulée
+        # Stage 2: Simulated cross conversion
         step2_losses = self._training_step_2(batch)
         
-        # Étape 3: Cohérence cyclique
+        # Stage 3: Cycle consistency
         step3_losses = self._training_step_3(batch)
         
-        # Combiner toutes les pertes
+        # Combine all losses
         total_losses = {}
         for key in step1_losses.keys():
             total_losses[key] = (
@@ -200,68 +200,68 @@ class MulliVC(nn.Module):
         return total_losses
     
     def _training_step_1(self, batch: Dict[str, torch.Tensor]) -> Dict[str, torch.Tensor]:
-        """Étape 1: Entraînement standard (monolingue)"""
-        # Utiliser le même locuteur pour contenu et timbre
+        """Stage 1: Standard training (monolingual)."""
+        # Use the same speaker for content and timbre
         source_audio = batch['audio']
-        target_audio = batch['audio']  # Même audio
+        target_audio = batch['audio']  # Same audio
         
         # Forward pass
         outputs = self.forward(source_audio, target_audio)
         
-        # Cibles pour la reconstruction
+        # Targets for reconstruction
         targets = {
             'target_mel': self._audio_to_mel(target_audio),
             'target_timbre': outputs['timbre_features']
         }
         
-        # Calculer les pertes
+        # Compute losses
         losses = self.compute_losses(outputs, targets, is_real=True)
         
         return losses
     
     def _training_step_2(self, batch: Dict[str, torch.Tensor]) -> Dict[str, torch.Tensor]:
-        """Étape 2: Conversion croisée simulée"""
-        # Utiliser des locuteurs différents
+        """Stage 2: Simulated cross conversion."""
+        # Use different speakers
         source_audio = batch['audio']
-        # Simuler un audio de locuteur différent
+        # Simulate audio from a different speaker
         target_timbre_audio = torch.roll(source_audio, 1, dims=0)  # Simple simulation
         
         # Forward pass
         outputs = self.forward(source_audio, target_timbre_audio)
         
-        # Cibles pour la conversion
+        # Targets for conversion
         targets = {
             'target_mel': self._audio_to_mel(target_timbre_audio),
             'target_timbre': outputs['timbre_features']
         }
         
-        # Calculer les pertes
+        # Compute losses
         losses = self.compute_losses(outputs, targets, is_real=False)
         
         return losses
     
     def _training_step_3(self, batch: Dict[str, torch.Tensor]) -> Dict[str, torch.Tensor]:
-        """Étape 3: Cohérence cyclique"""
-        # Utiliser l'audio généré de l'étape 2
+        """Stage 3: Cycle consistency."""
+        # Use the audio generated in stage 2
         source_audio = batch['audio']
         target_timbre_audio = torch.roll(source_audio, 1, dims=0)
         
         # Forward pass
         outputs = self.forward(source_audio, target_timbre_audio)
         
-        # Reconstruction cyclique
+        # Cycle reconstruction
         reconstructed_outputs = self.forward(
-            outputs['generated_mel'],  # Utiliser le mél généré
-            source_audio  # Timbre original
+            outputs['generated_mel'],  # Use the generated mel
+            source_audio  # Original timbre
         )
         
-        # Cibles pour la cohérence cyclique
+        # Targets for cycle consistency
         targets = {
             'target_mel': self._audio_to_mel(source_audio),
             'target_timbre': outputs['timbre_features']
         }
         
-        # Calculer les pertes
+        # Compute losses
         losses = self.compute_losses(reconstructed_outputs, targets, is_real=True)
         
         return losses
@@ -272,14 +272,14 @@ class MulliVC(nn.Module):
         target_speaker_audio: torch.Tensor
     ) -> torch.Tensor:
         """
-        Inférence pour la conversion vocale
-        
+        Inference for voice conversion.
+
         Args:
-            source_audio: Audio source
-            target_speaker_audio: Audio du locuteur cible
-            
+            source_audio: Source audio.
+            target_speaker_audio: Target speaker audio.
+
         Returns:
-            generated_mel: Mél-spectrogramme généré
+            generated_mel: Generated mel spectrogram.
         """
         self.eval()
         
@@ -290,7 +290,7 @@ class MulliVC(nn.Module):
         return generated_mel
     
     def save_checkpoint(self, path: str, epoch: int, step: int):
-        """Sauvegarde le checkpoint du modèle"""
+        """Saves the model checkpoint."""
         checkpoint = {
             'epoch': epoch,
             'step': step,
@@ -300,14 +300,14 @@ class MulliVC(nn.Module):
         torch.save(checkpoint, path)
     
     def load_checkpoint(self, path: str):
-        """Charge un checkpoint du modèle"""
+        """Loads a model checkpoint."""
         checkpoint = torch.load(path, map_location='cpu')
         self.load_state_dict(checkpoint['model_state_dict'])
         return checkpoint['epoch'], checkpoint['step']
 
 
 def create_mullivc_model(config_path: str) -> MulliVC:
-    """Crée un modèle MulliVC à partir d'un fichier de configuration"""
+    """Creates a MulliVC model from a configuration file."""
     with open(config_path, 'r') as f:
         config = yaml.safe_load(f)
     

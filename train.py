@@ -1,5 +1,5 @@
 """
-Script d'entraînement pour MulliVC
+Training script for MulliVC.
 """
 import torch
 import torch.nn as nn
@@ -18,16 +18,16 @@ from utils.audio_utils import AudioProcessor
 
 
 class MulliVCTrainer:
-    """Trainer pour MulliVC"""
+    """Trainer for MulliVC."""
     
     def __init__(self, config_path: str):
         self.config = load_config(config_path)
         self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
         
-        # Initialiser le modèle
+        # Initialize the model
         self.model = create_mullivc_model(config_path).to(self.device)
         
-        # Initialiser les optimiseurs
+        # Initialize optimizers
         self.optimizer_g = optim.Adam(
             [
                 {'params': self.model.content_encoder.parameters()},
@@ -61,7 +61,7 @@ class MulliVCTrainer:
         # Audio processor
         self.audio_processor = AudioProcessor(self.config)
         
-        # Initialiser wandb
+        # Initialize wandb
         if self.config.get('wandb', {}).get('enabled', False):
             wandb.init(
                 project=self.config['wandb']['project'],
@@ -70,7 +70,7 @@ class MulliVCTrainer:
             )
     
     def train_epoch(self, dataloader: DataLoader, epoch: int) -> Dict[str, float]:
-        """Entraîne le modèle pour une époque"""
+        """Trains the model for one epoch."""
         self.model.train()
         
         total_losses = {
@@ -86,32 +86,32 @@ class MulliVCTrainer:
         
         with tqdm(dataloader, desc=f'Epoch {epoch}') as pbar:
             for batch_idx, batch in enumerate(pbar):
-                # Déplacer les données sur le device
+                # Move data to the device
                 batch = {k: v.to(self.device) if isinstance(v, torch.Tensor) else v 
                         for k, v in batch.items()}
                 
-                # Entraîner le générateur
+                # Train the generator
                 self.optimizer_g.zero_grad()
                 losses_g = self.model.training_step(batch, batch_idx)
                 loss_g = losses_g['total']
                 loss_g.backward()
                 self.optimizer_g.step()
                 
-                # Entraîner le discriminateur
+                # Train the discriminator
                 self.optimizer_d.zero_grad()
                 losses_d = self._train_discriminator(batch)
                 loss_d = losses_d['total']
                 loss_d.backward()
                 self.optimizer_d.step()
                 
-                # Mettre à jour les pertes totales
+                # Update total losses
                 for key in total_losses:
                     if key in losses_g:
                         total_losses[key] += losses_g[key].item()
                     if key in losses_d:
                         total_losses[key] += losses_d[key].item()
                 
-                # Mettre à jour la barre de progression
+                # Update the progress bar
                 pbar.set_postfix({
                     'G_Loss': f'{loss_g.item():.4f}',
                     'D_Loss': f'{loss_d.item():.4f}'
@@ -121,30 +121,30 @@ class MulliVCTrainer:
                 if batch_idx % self.config['training']['log_interval'] == 0:
                     self._log_metrics(epoch, batch_idx, losses_g, losses_d)
         
-        # Moyenner les pertes
+        # Average losses
         for key in total_losses:
             total_losses[key] /= num_batches
         
         return total_losses
     
     def _train_discriminator(self, batch: Dict[str, torch.Tensor]) -> Dict[str, torch.Tensor]:
-        """Entraîne le discriminateur"""
+        """Trains the discriminator."""
         source_audio = batch['audio']
-        target_audio = batch['audio']  # Même audio pour l'entraînement du discriminateur
+        target_audio = batch['audio']  # Same audio for discriminator training
         
         # Forward pass
         with torch.no_grad():
             outputs = self.model.forward(source_audio, target_audio)
             generated_mel = outputs['generated_mel']
         
-        # Vrais échantillons
+        # Real samples
         real_mel = self.audio_processor.audio_to_mel(target_audio)
         real_disc_output, _ = self.model.discriminator(real_mel)
         
-        # Faux échantillons
+        # Fake samples
         fake_disc_output, _ = self.model.discriminator(generated_mel)
         
-        # Perte du discriminateur
+        # Discriminator loss
         real_loss = self.model.loss_fn.adversarial_loss(real_disc_output, is_real=True)
         fake_loss = self.model.loss_fn.adversarial_loss(fake_disc_output, is_real=False)
         
@@ -156,7 +156,7 @@ class MulliVCTrainer:
         }
     
     def _log_metrics(self, epoch: int, batch_idx: int, losses_g: Dict, losses_d: Dict):
-        """Log les métriques"""
+        """Logs metrics."""
         if self.config.get('wandb', {}).get('enabled', False):
             metrics = {
                 'epoch': epoch,
@@ -172,7 +172,7 @@ class MulliVCTrainer:
             wandb.log(metrics)
     
     def validate(self, dataloader: DataLoader, epoch: int) -> Dict[str, float]:
-        """Valide le modèle"""
+        """Validates the model."""
         self.model.eval()
         
         total_losses = {
@@ -194,28 +194,28 @@ class MulliVCTrainer:
                 # Forward pass
                 outputs = self.model.forward(batch['audio'], batch['audio'])
                 
-                # Cibles
+                # Targets
                 targets = {
                     'target_mel': self.audio_processor.audio_to_mel(batch['audio']),
                     'target_timbre': outputs['timbre_features']
                 }
                 
-                # Calculer les pertes
+                # Compute losses
                 losses = self.model.compute_losses(outputs, targets, is_real=True)
                 
-                # Accumuler les pertes
+                # Accumulate losses
                 for key in total_losses:
                     if key in losses:
                         total_losses[key] += losses[key].item()
         
-        # Moyenner les pertes
+        # Average losses
         for key in total_losses:
             total_losses[key] /= num_batches
         
         return total_losses
     
     def save_checkpoint(self, epoch: int, step: int, is_best: bool = False):
-        """Sauvegarde un checkpoint"""
+        """Saves a checkpoint."""
         checkpoint_dir = self.config['paths']['checkpoint_dir']
         os.makedirs(checkpoint_dir, exist_ok=True)
         
@@ -227,21 +227,21 @@ class MulliVCTrainer:
             self.model.save_checkpoint(best_path, epoch, step)
     
     def train(self):
-        """Boucle d'entraînement principale"""
-        # Créer les dataloaders
+        """Main training loop."""
+        # Create dataloaders
         train_dataloader = create_dataloader(self.config, split='train')
         val_dataloader = create_dataloader(self.config, split='validation')
         
         best_val_loss = float('inf')
         
         for epoch in range(self.config['training']['num_epochs']):
-            # Entraînement
+            # Training
             train_losses = self.train_epoch(train_dataloader, epoch)
             
             # Validation
             val_losses = self.validate(val_dataloader, epoch)
             
-            # Mettre à jour les schedulers
+            # Update schedulers
             self.scheduler_g.step()
             self.scheduler_d.step()
             
@@ -265,7 +265,7 @@ class MulliVCTrainer:
                     'val/asr_loss': val_losses['asr']
                 })
             
-            # Sauvegarder le checkpoint
+            # Save the checkpoint
             is_best = val_losses['total'] < best_val_loss
             if is_best:
                 best_val_loss = val_losses['total']
@@ -285,16 +285,16 @@ def main():
     
     args = parser.parse_args()
     
-    # Créer le trainer
+    # Create the trainer
     trainer = MulliVCTrainer(args.config)
     
-    # Reprendre depuis un checkpoint si spécifié
+    # Resume from a checkpoint if specified
     if args.resume:
         checkpoint = torch.load(args.resume, map_location='cpu')
         trainer.model.load_state_dict(checkpoint['model_state_dict'])
         print(f'Checkpoint chargé depuis {args.resume}')
     
-    # Commencer l'entraînement
+    # Start training
     trainer.train()
 
 
