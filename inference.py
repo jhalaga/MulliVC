@@ -2,7 +2,6 @@
 Inference script for MulliVC
 """
 import torch
-import torchaudio
 import numpy as np
 import argparse
 import os
@@ -12,6 +11,7 @@ import yaml
 from models.mullivc import MulliVC, create_mullivc_model
 from utils.audio_utils import AudioProcessor
 from utils.data_utils import load_config
+from utils.model_utils import get_runtime_device
 
 
 class MulliVCInference:
@@ -19,7 +19,7 @@ class MulliVCInference:
     
     def __init__(self, config_path: str, checkpoint_path: str):
         self.config = load_config(config_path)
-        self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+        self.device = get_runtime_device()
         
         # Load the model
         self.model = create_mullivc_model(config_path).to(self.device)
@@ -40,18 +40,7 @@ class MulliVCInference:
     
     def load_audio(self, audio_path: str) -> torch.Tensor:
         """Loads an audio file."""
-        audio, sr = torchaudio.load(audio_path)
-        
-        # Resample if needed
-        if sr != self.config['data']['sample_rate']:
-            resampler = torchaudio.transforms.Resample(sr, self.config['data']['sample_rate'])
-            audio = resampler(audio)
-        
-        # Convert to mono if stereo
-        if audio.shape[0] > 1:
-            audio = audio.mean(dim=0, keepdim=True)
-        
-        return audio.squeeze(0)  # (samples,)
+        return self.audio_processor.load_audio(audio_path)
     
     def preprocess_audio(self, audio: torch.Tensor) -> torch.Tensor:
         """Preprocesses audio."""
@@ -123,13 +112,8 @@ class MulliVCInference:
         """Saves audio."""
         # Create the output directory if needed
         os.makedirs(os.path.dirname(output_path), exist_ok=True)
-        
-        # Save
-        torchaudio.save(
-            output_path,
-            audio.cpu(),
-            self.config['data']['sample_rate']
-        )
+
+        self.audio_processor.save_audio(output_path, audio.cpu())
     
     def batch_convert(
         self,

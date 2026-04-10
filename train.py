@@ -15,6 +15,7 @@ from typing import Dict, Any
 from models.mullivc import MulliVC, create_mullivc_model
 from utils.data_utils import create_dataloader, load_config
 from utils.audio_utils import AudioProcessor
+from utils.model_utils import get_runtime_device
 
 
 class MulliVCTrainer:
@@ -22,7 +23,7 @@ class MulliVCTrainer:
     
     def __init__(self, config_path: str):
         self.config = load_config(config_path)
-        self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+        self.device = get_runtime_device()
         
         # Initialize the model
         self.model = create_mullivc_model(config_path).to(self.device)

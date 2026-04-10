@@ -6,6 +6,7 @@ import torchaudio
 import librosa
 import numpy as np
 from typing import Tuple, Optional
+import soundfile as sf
 
 
 class MelSpectrogram:
@@ -83,7 +84,13 @@ class AudioProcessor:
     
     def load_audio(self, file_path: str) -> torch.Tensor:
         """Loads an audio file."""
-        audio, sr = torchaudio.load(file_path)
+        audio, sr = sf.read(file_path, always_2d=False)
+        audio = torch.from_numpy(audio).float()
+
+        if audio.dim() > 1:
+            audio = audio.transpose(0, 1)
+        else:
+            audio = audio.unsqueeze(0)
         
         # Resample if needed
         if sr != self.sample_rate:
@@ -95,6 +102,19 @@ class AudioProcessor:
             audio = audio.mean(dim=0, keepdim=True)
         
         return audio.squeeze(0)  # Retourner (samples,)
+
+    def save_audio(self, file_path: str, audio: torch.Tensor):
+        """Saves an audio tensor without requiring torchcodec."""
+        audio = audio.detach().cpu()
+
+        if audio.dim() == 1:
+            audio_np = audio.numpy()
+        elif audio.dim() == 2:
+            audio_np = audio.transpose(0, 1).numpy()
+        else:
+            raise ValueError(f"Format audio non supporté pour la sauvegarde: {audio.shape}")
+
+        sf.write(file_path, audio_np, self.sample_rate)
     
     def preprocess_audio(self, audio: torch.Tensor) -> torch.Tensor:
         """Preprocesses audio by normalizing and trimming it."""

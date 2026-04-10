@@ -251,9 +251,12 @@ class MulliVC(nn.Module):
         outputs = self.forward(source_audio, target_timbre_audio)
         
         # Cycle reconstruction
+        generated_audio = outputs.get('generated_audio')
+        cycle_source_audio = generated_audio if generated_audio is not None else source_audio
+
         reconstructed_outputs = self.forward(
-            outputs['generated_mel'],  # Use the generated mel
-            source_audio  # Original timbre
+            cycle_source_audio,
+            source_audio
         )
         
         # Targets for cycle consistency

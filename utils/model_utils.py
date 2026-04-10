@@ -8,6 +8,32 @@ import os
 import yaml
 
 
+def get_runtime_device(prefer_cuda: bool = True) -> torch.device:
+    """Returns a usable runtime device, falling back to CPU when CUDA is unsupported."""
+    if prefer_cuda and torch.cuda.is_available():
+        try:
+            capability = torch.cuda.get_device_capability(0)
+            current_arch = f"sm_{capability[0]}{capability[1]}"
+            supported_arches = {
+                arch for arch in torch.cuda.get_arch_list()
+                if arch.startswith('sm_')
+            }
+
+            if supported_arches and current_arch not in supported_arches:
+                device_name = torch.cuda.get_device_name(0)
+                print(
+                    f"GPU {device_name} ({current_arch}) is unsupported by the installed PyTorch build; using CPU instead."
+                )
+                return torch.device('cpu')
+
+            torch.empty(1, device='cuda')
+            return torch.device('cuda')
+        except Exception as exc:
+            print(f"CUDA unavailable at runtime: {exc}. Using CPU instead.")
+
+    return torch.device('cpu')
+
+
 def load_pretrained_models(config: Dict[str, Any]) -> Dict[str, nn.Module]:
     """
     Loads the required pretrained models.

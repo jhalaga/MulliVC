@@ -12,6 +12,7 @@ from tqdm import tqdm
 from models.mullivc import MulliVC, create_mullivc_model
 from utils.data_utils import create_dataloader, load_config
 from utils.audio_utils import AudioProcessor
+from utils.model_utils import get_runtime_device
 from evaluation.metrics import ComprehensiveEvaluator
 
 
@@ -20,7 +21,7 @@ class MulliVCEvaluator:
     
     def __init__(self, config_path: str, checkpoint_path: str):
         self.config = load_config(config_path)
-        self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+        self.device = get_runtime_device()
         
         # Load the model
         self.model = create_mullivc_model(config_path).to(self.device)
@@ -83,7 +84,7 @@ class MulliVCEvaluator:
                 
                 # Save converted audio
                 output_path = os.path.join(output_dir, f"converted_{i:04d}.wav")
-                torchaudio.save(output_path, converted_audio, self.config['data']['sample_rate'])
+                self.audio_processor.save_audio(output_path, converted_audio)
         
             # Evaluate the batch
         metrics = self.evaluator.evaluate_batch(
@@ -150,7 +151,7 @@ class MulliVCEvaluator:
                 
                 # Save
                 output_path = os.path.join(output_dir, f"cross_lingual_{i:04d}.wav")
-                torchaudio.save(output_path, converted_audio, self.config['data']['sample_rate'])
+                self.audio_processor.save_audio(output_path, converted_audio)
         
             # Average metrics
         avg_metrics = {}

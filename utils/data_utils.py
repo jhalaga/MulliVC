@@ -1,13 +1,36 @@
 """
 Utilities for data loading and processing.
 """
+import io
 import torch
+import torchaudio
 from torch.utils.data import Dataset, DataLoader
 from typing import Dict, List, Tuple, Optional
 import os
 import random
-from datasets import load_dataset
+from datasets import Audio, load_dataset
+import soundfile as sf
 import yaml
+
+
+def _normalize_config_values(value):
+    """Recursively converts numeric-looking YAML strings into Python numbers."""
+    if isinstance(value, dict):
+        return {key: _normalize_config_values(item) for key, item in value.items()}
+
+    if isinstance(value, list):
+        return [_normalize_config_values(item) for item in value]
+
+    if isinstance(value, str):
+        stripped = value.strip()
+        try:
+            if any(marker in stripped.lower() for marker in ['.', 'e']):
+                return float(stripped)
+            return int(stripped)
+        except ValueError:
+            return value
+
+    return value
 
 
 class MulliVCDataset(Dataset):
@@ -32,6 +55,50 @@ class MulliVCDataset(Dataset):
         
         if max_samples:
             self.samples = self.samples[:max_samples]
+
+    def _split_name(self, train_split: str, eval_split: str) -> str:
+        """Maps repository split names onto dataset split names."""
+        if self.split in {'validation', 'val', 'dev', 'test'}:
+            return eval_split
+        return train_split
+
+    def _sample_limit(self, default_limit: int, num_sources: int = 1) -> int:
+        """Calculates a small per-source limit when max_samples is requested."""
+        if not self.max_samples:
+            return default_limit
+
+        per_source_limit = max(1, self.max_samples // max(1, num_sources))
+        return min(default_limit, per_source_limit)
+
+    def _decode_audio(self, audio_info: Dict, sample_rate: int) -> torch.Tensor:
+        """Decodes dataset audio payloads without requiring torchcodec."""
+        if 'array' in audio_info:
+            audio_tensor = torch.from_numpy(audio_info['array']).float()
+            audio_sr = audio_info.get('sampling_rate', sample_rate)
+        else:
+            audio_bytes = audio_info.get('bytes')
+            audio_path = audio_info.get('path')
+
+            if audio_bytes is not None:
+                audio_array, audio_sr = sf.read(io.BytesIO(audio_bytes), always_2d=False)
+            elif audio_path is not None:
+                audio_array, audio_sr = sf.read(audio_path, always_2d=False)
+            else:
+                raise ValueError('Aucun contenu audio décodable trouvé dans l\'échantillon.')
+
+            audio_tensor = torch.from_numpy(audio_array).float()
+
+        if audio_tensor.dim() > 1:
+            audio_tensor = audio_tensor.mean(dim=-1)
+
+        if audio_sr != sample_rate:
+            audio_tensor = torchaudio.functional.resample(
+                audio_tensor.unsqueeze(0),
+                audio_sr,
+                sample_rate
+            ).squeeze(0)
+
+        return audio_tensor
     
     def _load_libritts(self) -> List[Dict]:
         """Loads the LibriTTS dataset."""
@@ -39,17 +106,23 @@ class MulliVCDataset(Dataset):
             # Load from HuggingFace
             dataset = load_dataset(
                 "mythicinfinity/libritts",
-                split="train.clean.360",
+                "clean",
+                split=self._split_name("train.clean.360", "dev.clean"),
                 streaming=True
             )
+            dataset = dataset.cast_column('audio', Audio(decode=False))
             
             # Convert to a list for easier access
             libritts_samples = []
+            sample_limit = self._sample_limit(1000)
             for i, sample in enumerate(dataset):
-                if i >= 1000:  # Limit for tests
+                if i >= sample_limit:
                     break
                 libritts_samples.append({
-                    'audio': sample['audio'],
+                    'audio': self._decode_audio(
+                        sample['audio'],
+                        self.config['data']['sample_rate']
+                    ),
                     'text': sample['text_normalized'],
                     'speaker_id': sample['speaker_id'],
                     'language': 'en'
@@ -64,24 +137,30 @@ class MulliVCDataset(Dataset):
     def _load_fongbe(self) -> List[Dict]:
         """Loads the Fongbe dataset."""
         try:
-            # Load from HuggingFace
-            dataset = load_dataset(
-                "beethogedeon/fongbe-speech",
-                split="train",
-                streaming=True
-            )
-            
-            # Convert to a list
             fongbe_samples = []
-            for i, sample in enumerate(dataset):
-                if i >= 1000:  # Limit for tests
-                    break
-                fongbe_samples.append({
-                    'audio': sample['audio'],
-                    'text': sample['text'],
-                    'speaker_id': sample['speaker_id'],
-                    'language': 'fongbe'
-                })
+            sample_limit = self._sample_limit(500, num_sources=2)
+
+            for config_name in ['female', 'male']:
+                dataset = load_dataset(
+                    "beethogedeon/fongbe-speech",
+                    config_name,
+                    split=self._split_name('train', 'test'),
+                    streaming=True
+                )
+                dataset = dataset.cast_column('audio', Audio(decode=False))
+
+                for i, sample in enumerate(dataset):
+                    if i >= sample_limit:
+                        break
+                    fongbe_samples.append({
+                        'audio': self._decode_audio(
+                            sample['audio'],
+                            self.config['data']['sample_rate']
+                        ),
+                        'text': sample['text'],
+                        'speaker_id': str(sample['speaker_id']),
+                        'language': 'fongbe'
+                    })
             
             return fongbe_samples
             
@@ -121,10 +200,7 @@ class MulliVCDataset(Dataset):
     def __getitem__(self, idx: int) -> Dict:
         """Retrieves a sample from the dataset."""
         sample = self.samples[idx]
-        
-        # Load audio
-        audio = sample['audio']['array']
-        audio_tensor = torch.from_numpy(audio).float()
+        audio_tensor = sample['audio'].clone()
         
         # Normalize audio
         audio_tensor = audio_tensor / (torch.abs(audio_tensor).max() + 1e-8)
@@ -261,4 +337,4 @@ def load_config(config_path: str) -> dict:
     """Loads configuration from a YAML file."""
     with open(config_path, 'r') as f:
         config = yaml.safe_load(f)
-    return config
+    return _normalize_config_values(config)

@@ -2,7 +2,6 @@
 Demo script for MulliVC
 """
 import torch
-import torchaudio
 import numpy as np
 import argparse
 import os
@@ -13,7 +12,7 @@ import yaml
 from models.mullivc import MulliVC, create_mullivc_model
 from utils.data_utils import load_config
 from utils.audio_utils import AudioProcessor
-from utils.model_utils import print_model_summary, count_parameters
+from utils.model_utils import print_model_summary, count_parameters, get_runtime_device
 
 
 class MulliVCDemo:
@@ -21,7 +20,7 @@ class MulliVCDemo:
     
     def __init__(self, config_path: str, checkpoint_path: Optional[str] = None):
         self.config = load_config(config_path)
-        self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+        self.device = get_runtime_device()
         
         # Load the model
         self.model = create_mullivc_model(config_path).to(self.device)
@@ -43,19 +42,8 @@ class MulliVCDemo:
             print(f"Fichier audio non trouvé: {audio_path}")
             print("Génération d'un audio de démonstration...")
             return self._generate_demo_audio()
-        
-        audio, sr = torchaudio.load(audio_path)
-        
-        # Resample if needed
-        if sr != self.config['data']['sample_rate']:
-            resampler = torchaudio.transforms.Resample(sr, self.config['data']['sample_rate'])
-            audio = resampler(audio)
-        
-        # Convert to mono
-        if audio.shape[0] > 1:
-            audio = audio.mean(dim=0, keepdim=True)
-        
-        return audio.squeeze(0)
+
+        return self.audio_processor.load_audio(audio_path)
     
     def _generate_demo_audio(self, duration: float = 3.0) -> torch.Tensor:
         """Generates demo audio."""
@@ -119,15 +107,15 @@ class MulliVCDemo:
         
         # Audio source
         source_path = os.path.join(output_dir, "source.wav")
-        torchaudio.save(source_path, source_audio.squeeze(0).cpu(), self.config['data']['sample_rate'])
+        self.audio_processor.save_audio(source_path, source_audio.squeeze(0).cpu())
         
         # Target audio
         target_path = os.path.join(output_dir, "target.wav")
-        torchaudio.save(target_path, target_audio.squeeze(0).cpu(), self.config['data']['sample_rate'])
+        self.audio_processor.save_audio(target_path, target_audio.squeeze(0).cpu())
         
         # Converted audio
         converted_path = os.path.join(output_dir, "converted.wav")
-        torchaudio.save(converted_path, generated_audio.cpu(), self.config['data']['sample_rate'])
+        self.audio_processor.save_audio(converted_path, generated_audio.cpu())
         
         # Visualizations
         self._create_visualizations(
@@ -235,7 +223,7 @@ class MulliVCDemo:
         
         # Save
         converted_path = os.path.join(output_dir, "cross_lingual_converted.wav")
-        torchaudio.save(converted_path, generated_audio.cpu(), self.config['data']['sample_rate'])
+        self.audio_processor.save_audio(converted_path, generated_audio.cpu())
         
         print(f"Conversion cross-linguale terminée: {converted_path}")
     
