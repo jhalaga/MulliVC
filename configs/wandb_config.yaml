@@ -1,12 +1,12 @@
-# Configuration pour Weights & Biases
+# Weights & Biases configuration
 wandb:
   enabled: true
   project: "mullivc"
   name: "mullivc-experiment"
   tags: ["voice-conversion", "multilingual", "cross-lingual"]
-  notes: "Entraînement du modèle MulliVC pour la conversion vocale multilingue"
+  notes: "Training the MulliVC model for multilingual voice conversion"
   
-  # Métriques à suivre
+  # Metrics to track
   metrics:
     - "train/total_loss"
     - "train/reconstruction_loss"
@@ -23,7 +23,7 @@ wandb:
     - "learning_rate"
     - "epoch"
   
-  # Paramètres à loguer
+  # Parameters to log
   log_params:
     - "data.batch_size"
     - "data.sample_rate"

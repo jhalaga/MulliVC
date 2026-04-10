@@ -1,6 +1,6 @@
-# Configuration pour MulliVC
+# MulliVC configuration
 data:
-  # Chemins des datasets
+  # Dataset paths
   libritts_path: "data/libritts"
   fongbe_path: "data/fongbe"
   use_streaming: true
@@ -15,7 +15,7 @@ data:
   max_train_samples: 2000
   max_validation_samples: 256
   
-  # Paramètres audio
+  # Audio parameters
   sample_rate: 22050
   hop_length: 256
   win_length: 1024
@@ -23,11 +23,11 @@ data:
   mel_fmin: 0
   mel_fmax: 8000
   
-  # Paramètres de preprocessing
-  max_audio_length: 10.0  # secondes
-  min_audio_length: 1.0   # secondes
+  # Preprocessing parameters
+  max_audio_length: 10.0  # seconds
+  min_audio_length: 1.0   # seconds
   
-  # Batch size et dataloader
+  # Batch size and dataloader
   batch_size: 8
   num_workers: 4
   pin_memory: true
@@ -67,7 +67,7 @@ model:
     output_dim: 80
     num_layers: 4
   
-  # Discriminateur
+  # Discriminator
   discriminator:
     input_dim: 80
     hidden_dim: 512
@@ -75,20 +75,20 @@ model:
     patch_size: 16
 
 training:
-  # Hyperparamètres
+  # Hyperparameters
   learning_rate: 1e-4
   beta1: 0.5
   beta2: 0.999
   weight_decay: 1e-6
   
-  # Poids des pertes
+  # Loss weights
   lambda_adv: 0.05
   lambda_rec: 1.0
   lambda_timbre: 0.1
   lambda_pitch: 1.0
   lambda_asr: 0.5
   
-  # Entraînement
+  # Training
   num_epochs: 100
   steps_per_epoch: 1000
   validation_steps: 32
@@ -96,11 +96,11 @@ training:
   log_interval: 100
   enable_cycle_consistency: true
   
-  # Optimiseurs
+  # Optimizers
   lr_scheduler: "cosine"
   warmup_steps: 1000
 
-# Chemins
+# Paths
 paths:
   checkpoint_dir: "checkpoints"
   log_dir: "logs"
