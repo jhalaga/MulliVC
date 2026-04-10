@@ -1,186 +1,186 @@
 # MulliVC - Multilingual Voice Conversion System
 
-Un système de conversion vocale multilingue qui préserve le contenu original tout en convertissant le timbre vers celui d'un autre locuteur, fonctionnant sans données appariées.
+A multilingual voice conversion system that preserves the original content while converting the timbre to that of another speaker, without requiring paired data.
 
 ## 🏗️ Architecture
 
-Le système MulliVC se compose de plusieurs composants clés :
+The MulliVC system is composed of several key components:
 
-- **Content Encoder** : Encode le contenu linguistique (WavLM/ContentVec)
-- **Timbre Encoder** : Encode le timbre global du locuteur
-- **Fine-grained Timbre Conformer** : Capture les détails fins du timbre
-- **Mel Decoder** : Génère les mél-spectrogrammes synthétiques
-- **Discriminateur (GAN)** : Améliore la qualité du spectrogramme généré
+- **Content Encoder**: Encodes linguistic content (WavLM/ContentVec)
+- **Timbre Encoder**: Encodes the speaker's global timbre
+- **Fine-grained Timbre Conformer**: Captures fine-grained timbre details
+- **Mel Decoder**: Generates synthetic mel spectrograms
+- **Discriminator (GAN)**: Improves the quality of the generated spectrogram
 
 ## 📦 Installation
 
 ```bash
-# Cloner le repository
+# Clone the repository
 git clone <repository-url>
 cd MulliVC
 
-# Installer les dépendances
+# Install dependencies
 pip install -r requirements.txt
 
-# Tester l'installation
+# Test the installation
 python test_system.py
 ```
 
-## 🚀 Utilisation
+## 🚀 Usage
 
-### Entraînement
+### Training
 
 ```bash
-# Entraînement standard
+# Standard training
 python train.py --config configs/mullivc_config.yaml
 
-# Reprendre depuis un checkpoint
+# Resume from a checkpoint
 python train.py --config configs/mullivc_config.yaml --resume checkpoints/checkpoint_epoch_10.pt
 ```
 
-### Inférence
+### Inference
 
 ```bash
-# Conversion vocale standard
+# Standard voice conversion
 python inference.py --checkpoint checkpoints/best_model.pt --source_audio path/to/source.wav --target_speaker_audio path/to/target.wav --output converted.wav
 
-# Conversion cross-linguale
+# Cross-lingual conversion
 python inference.py --checkpoint checkpoints/best_model.pt --source_audio path/to/source.wav --target_speaker_audio path/to/target.wav --output converted.wav --source_language en --target_language fongbe
 ```
 
-### Démonstration
+### Demo
 
 ```bash
-# Démonstration complète
+# Full demo
 python demo.py --config configs/mullivc_config.yaml --checkpoint checkpoints/best_model.pt
 
-# Analyse du modèle
+# Model analysis
 python demo.py --config configs/mullivc_config.yaml --analyze
 
-# Benchmark de performance
+# Performance benchmark
 python demo.py --config configs/mullivc_config.yaml --benchmark
 ```
 
-### Évaluation
+### Evaluation
 
 ```bash
-# Évaluation standard
+# Standard evaluation
 python evaluation/evaluate.py --config configs/mullivc_config.yaml --checkpoint checkpoints/best_model.pt --output_dir evaluation_results
 
-# Évaluation cross-linguale
+# Cross-lingual evaluation
 python evaluation/evaluate.py --config configs/mullivc_config.yaml --checkpoint checkpoints/best_model.pt --cross_lingual --output_dir evaluation_results
 ```
 
-## 📊 Données
+## 📊 Data
 
-Le système utilise :
-- **LibriTTS** : Corpus anglais avec plusieurs locuteurs
-- **Fongbe Speech** : Corpus Fongbe avec locuteurs masculins et féminins
+The system uses:
+- **LibriTTS**: English corpus with multiple speakers
+- **Fongbe Speech**: Fongbe corpus with male and female speakers
 
-Les datasets sont automatiquement téléchargés depuis HuggingFace lors du premier lancement.
+The datasets are automatically downloaded from HuggingFace on first run.
 
-## 🧪 Évaluation
+## 🧪 Evaluation
 
-### Métriques objectives
-- **WER/CER** : Évaluation de l'intelligibilité avec Whisper
-- **SIM** : Similarité du locuteur avec ECAPA-TDNN
-- **Qualité audio** : Métriques spectrales et temporelles
+### Objective metrics
+- **WER/CER**: Intelligibility evaluation with Whisper
+- **SIM**: Speaker similarity with ECAPA-TDNN
+- **Audio quality**: Spectral and temporal metrics
 
-### Métriques subjectives
-- **MOS** : Évaluation subjective de la qualité
-- **Similarité du locuteur** : Évaluation humaine
-- **Préservation du contenu** : Évaluation de l'intelligibilité
+### Subjective metrics
+- **MOS**: Subjective quality evaluation
+- **Speaker similarity**: Human evaluation
+- **Content preservation**: Intelligibility evaluation
 
 ## 🔧 Configuration
 
-Le fichier `configs/mullivc_config.yaml` contient tous les paramètres du système :
+The `configs/mullivc_config.yaml` file contains all system parameters:
 
-- **Données** : Chemins, paramètres audio, batch size
-- **Modèle** : Architecture des composants
-- **Entraînement** : Hyperparamètres, pertes, optimiseurs
-- **Chemins** : Dossiers de sortie
+- **Data**: Paths, audio parameters, batch size
+- **Model**: Component architecture
+- **Training**: Hyperparameters, losses, optimizers
+- **Paths**: Output directories
 
-## 📁 Structure du projet
+## 📁 Project structure
 
 ```
 MulliVC/
-├── models/                 # Modèles du système
-│   ├── content_encoder.py  # Encodeur de contenu
-│   ├── timbre_encoder.py   # Encodeur de timbre
-│   ├── fine_grained_conformer.py  # Conformer fine-grained
-│   ├── mel_decoder.py      # Décodeur mél
-│   ├── discriminator.py    # Discriminateur GAN
-│   ├── losses.py          # Fonctions de perte
-│   └── mullivc.py         # Modèle principal
-├── utils/                  # Utilitaires
-│   ├── audio_utils.py     # Traitement audio
-│   ├── data_utils.py      # Chargement des données
-│   └── model_utils.py     # Utilitaires modèles
-├── evaluation/           # Évaluation
-│   ├── metrics.py         # Métriques d'évaluation
-│   └── evaluate.py        # Script d'évaluation
-├── configs/               # Configurations
+├── models/                 # System models
+│   ├── content_encoder.py  # Content encoder
+│   ├── timbre_encoder.py   # Timbre encoder
+│   ├── fine_grained_conformer.py  # Fine-grained conformer
+│   ├── mel_decoder.py      # Mel decoder
+│   ├── discriminator.py    # GAN discriminator
+│   ├── losses.py           # Loss functions
+│   └── mullivc.py          # Main model
+├── utils/                  # Utilities
+│   ├── audio_utils.py      # Audio processing
+│   ├── data_utils.py       # Data loading
+│   └── model_utils.py      # Model utilities
+├── evaluation/             # Evaluation
+│   ├── metrics.py          # Evaluation metrics
+│   └── evaluate.py         # Evaluation script
+├── configs/                # Configurations
 │   ├── mullivc_config.yaml
 │   └── wandb_config.yaml
-├── train.py              # Script d'entraînement
-├── inference.py          # Script d'inférence
-├── demo.py               # Script de démonstration
-├── test_system.py        # Tests du système
-└── requirements.txt      # Dépendances
+├── train.py                # Training script
+├── inference.py            # Inference script
+├── demo.py                 # Demo script
+├── test_system.py          # System tests
+└── requirements.txt        # Dependencies
 ```
 
-## 🎯 Fonctionnalités
+## 🎯 Features
 
-### Conversion monolingue
-- Préservation du contenu linguistique
-- Conversion du timbre vers un autre locuteur
-- Qualité audio élevée
+### Monolingual conversion
+- Preservation of linguistic content
+- Timbre conversion to another speaker
+- High audio quality
 
-### Conversion cross-linguale
-- Conversion entre langues différentes
-- Préservation du contenu sémantique
-- Adaptation du timbre à la langue cible
+### Cross-lingual conversion
+- Conversion between different languages
+- Preservation of semantic content
+- Timbre adaptation to the target language
 
-### Entraînement en 3 étapes
-1. **Étape 1** : Entraînement standard (monolingue)
-2. **Étape 2** : Conversion croisée simulée
-3. **Étape 3** : Cohérence cyclique
+### 3-stage training
+1. **Stage 1**: Standard training (monolingual)
+2. **Stage 2**: Simulated cross conversion
+3. **Stage 3**: Cycle consistency
 
-## 🚀 Démarrage rapide
+## 🚀 Quick start
 
 ```bash
-# 1. Tester l'installation
+# 1. Test the installation
 python test_system.py
 
-# 2. Démonstration avec données synthétiques
+# 2. Demo with synthetic data
 python demo.py --config configs/mullivc_config.yaml
 
-# 3. Entraînement (nécessite des données)
+# 3. Training (requires data)
 python train.py --config configs/mullivc_config.yaml
 
-# 4. Inférence
+# 4. Inference
 python inference.py --checkpoint checkpoints/best_model.pt --source_audio source.wav --target_speaker_audio target.wav --output converted.wav
 ```
 
 ## 📈 Monitoring
 
-Le système supporte Weights & Biases pour le monitoring :
+The system supports Weights & Biases for monitoring:
 
 ```bash
-# Activer W&B dans la configuration
+# Enable W&B in the configuration
 wandb:
   enabled: true
   project: "mullivc"
 ```
 
-## 🤝 Contribution
+## 🤝 Contributing
 
-1. Fork le repository
-2. Créer une branche feature
-3. Commiter les changements
-4. Pousser vers la branche
-5. Ouvrir une Pull Request
+1. Fork the repository
+2. Create a feature branch
+3. Commit your changes
+4. Push to the branch
+5. Open a pull request
 
-## 📄 Licence
+## 📄 License
 
-Ce projet est sous licence MIT. Voir le fichier LICENSE pour plus de détails.
+This project is licensed under the MIT License. See the LICENSE file for more details.
