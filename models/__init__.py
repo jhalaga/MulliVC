@@ -5,14 +5,17 @@ from .content_encoder import ContentEncoder
 from .timbre_encoder import TimbreEncoder
 from .fine_grained_conformer import FineGrainedTimbreConformer
 from .mel_decoder import MelDecoder
-from .discriminator import Discriminator
+from .discriminator import PatchGANDiscriminator
 from .mullivc import MulliVC
+
+Discriminator = PatchGANDiscriminator
 
 __all__ = [
     'ContentEncoder',
     'TimbreEncoder', 
     'FineGrainedTimbreConformer',
     'MelDecoder',
+    'PatchGANDiscriminator',
     'Discriminator',
     'MulliVC'
 ]

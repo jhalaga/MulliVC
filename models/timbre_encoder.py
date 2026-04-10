@@ -32,7 +32,7 @@ class TimbreEncoder(nn.Module):
         self.conv_layers = nn.ModuleList([
             nn.Sequential(
                 nn.Conv2d(
-                    in_channels=input_dim if i == 0 else hidden_dim // (2 ** (i-1)),
+                    in_channels=1 if i == 0 else hidden_dim // (2 ** (i-1)),
                     out_channels=hidden_dim // (2 ** i),
                     kernel_size=3,
                     padding=1

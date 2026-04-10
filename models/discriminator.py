@@ -34,7 +34,7 @@ class PatchGANDiscriminator(nn.Module):
         self.conv_layers.append(
             nn.Sequential(
                 nn.Conv2d(
-                    in_channels=input_dim,
+                    in_channels=1,
                     out_channels=hidden_dim // 8,
                     kernel_size=4,
                     stride=2,
@@ -115,6 +115,14 @@ class PatchGANDiscriminator(nn.Module):
         
         # Apply convolution layers
         for i, conv_layer in enumerate(self.conv_layers):
+            conv = conv_layer[0]
+            if isinstance(conv, nn.Conv2d):
+                kernel_height, kernel_width = conv.kernel_size
+                pad_height = max(0, kernel_height - x.shape[-2])
+                pad_width = max(0, kernel_width - x.shape[-1])
+                if pad_height > 0 or pad_width > 0:
+                    x = F.pad(x, (0, pad_width, 0, pad_height))
+
             x = conv_layer(x)
             
             if return_features and i < len(self.conv_layers) - 1:

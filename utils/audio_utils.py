@@ -30,11 +30,12 @@ class MelSpectrogram:
         # Create the mel transform
         self.mel_transform = torchaudio.transforms.MelSpectrogram(
             sample_rate=sample_rate,
-            n_mel_channels=n_mel_channels,
+            n_fft=win_length,
             hop_length=hop_length,
             win_length=win_length,
-            mel_fmin=mel_fmin,
-            mel_fmax=self.mel_fmax,
+            f_min=mel_fmin,
+            f_max=self.mel_fmax,
+            n_mels=n_mel_channels,
             power=1.0
         )
     
@@ -132,8 +133,8 @@ class AudioProcessor:
             n_stft=(self.win_length // 2 + 1),
             n_mels=self.n_mel_channels,
             sample_rate=self.sample_rate,
-            mel_fmin=self.mel_fmin,
-            mel_fmax=self.mel_fmax
+            f_min=self.mel_fmin,
+            f_max=self.mel_fmax
         )
         
         griffin_lim = torchaudio.transforms.GriffinLim(

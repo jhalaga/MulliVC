@@ -40,6 +40,18 @@ class ReconstructionLoss(nn.Module):
         Returns:
             loss: Reconstruction loss.
         """
+        if predicted.dim() == 3 and target.dim() == 3:
+            if target.shape[1] != predicted.shape[1] and target.shape[2] == predicted.shape[1]:
+                target = target.transpose(1, 2)
+
+            if target.shape[-1] != predicted.shape[-1]:
+                target = F.interpolate(
+                    target,
+                    size=predicted.shape[-1],
+                    mode='linear',
+                    align_corners=False
+                )
+
         l1_loss = self.l1_loss(predicted, target)
         l2_loss = self.l2_loss(predicted, target)
         
@@ -446,9 +458,17 @@ class CombinedLoss(nn.Module):
         )
         
         # Pitch loss
-        losses['pitch'] = self.lambda_pitch * self.pitch_loss(
-            predicted_pitch, target_pitch, predicted_voiced, target_voiced
-        )
+        if (
+            predicted_pitch is not None and
+            target_pitch is not None and
+            predicted_voiced is not None and
+            target_voiced is not None
+        ):
+            losses['pitch'] = self.lambda_pitch * self.pitch_loss(
+                predicted_pitch, target_pitch, predicted_voiced, target_voiced
+            )
+        else:
+            losses['pitch'] = torch.tensor(0.0, device=predicted_mel.device)
         
         # Adversarial loss
         losses['adversarial'] = self.adversarial_loss(

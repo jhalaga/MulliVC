@@ -30,8 +30,7 @@ def load_pretrained_models(config: Dict[str, Any]) -> Dict[str, nn.Module]:
     
     # Load the speaker verification model
     try:
-        import speechbrain as sb
-        from speechbrain.pretrained import EncoderClassifier
+        from speechbrain.inference import EncoderClassifier
         models['speaker_verification'] = EncoderClassifier.from_hparams(
             source="speechbrain/spkrec-ecapa-voxceleb",
             savedir="pretrained_models/spkrec-ecapa-voxceleb"

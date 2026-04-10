@@ -29,6 +29,13 @@ class ContentEncoder(nn.Module):
         
         # Load the pretrained WavLM model
         self.wavlm = WavLMModel.from_pretrained(model_name)
+
+        # Avoid a transformers/WavLM training-time requires_grad bug on recent PyTorch.
+        if hasattr(self.wavlm, 'feature_extractor'):
+            self.wavlm.feature_extractor._requires_grad = False
+
+        if hasattr(self.wavlm.config, 'apply_spec_augment'):
+            self.wavlm.config.apply_spec_augment = False
         
         if freeze_backbone:
             # Freeze backbone parameters

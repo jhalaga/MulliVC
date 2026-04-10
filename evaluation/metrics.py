@@ -10,8 +10,7 @@ import librosa
 from scipy.spatial.distance import cosine
 import whisper
 from transformers import Wav2Vec2ForCTC, Wav2Vec2Processor
-import speechbrain as sb
-from speechbrain.pretrained import EncoderClassifier
+from speechbrain.inference import EncoderClassifier
 
 
 class SpeakerSimilarityMetric:

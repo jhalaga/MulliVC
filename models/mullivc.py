@@ -101,6 +101,7 @@ class MulliVC(nn.Module):
         
         # Generate the mel spectrogram
         generated_mel = self.mel_decoder(content_features, fine_grained_timbre)
+        generated_mel = generated_mel.transpose(1, 2)
         
         # Discriminator
         discriminator_output, _ = self.discriminator(generated_mel)
