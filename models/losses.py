@@ -261,7 +261,7 @@ class AdversarialLoss(nn.Module):
                 loss = F.relu(1 + discriminator_output).mean()
         
         else:
-            raise ValueError(f"Mode GAN non supporté: {self.gan_mode}")
+            raise ValueError(f"Unsupported GAN mode: {self.gan_mode}")
         
         return self.weight * loss
 

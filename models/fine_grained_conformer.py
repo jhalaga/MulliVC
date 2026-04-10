@@ -96,7 +96,7 @@ class MultiHeadSelfAttention(nn.Module):
         self.num_heads = num_heads
         self.head_dim = input_dim // num_heads
         
-        assert input_dim % num_heads == 0, "input_dim doit être divisible par num_heads"
+        assert input_dim % num_heads == 0, "input_dim must be divisible by num_heads"
         
         # Linear projections
         self.q_linear = nn.Linear(input_dim, input_dim)

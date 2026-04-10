@@ -60,7 +60,7 @@ class MulliVCEvaluator:
         reference_texts = []
         
         with torch.no_grad():
-            for i, batch in enumerate(tqdm(dataloader, desc="Évaluation")):
+            for i, batch in enumerate(tqdm(dataloader, desc="Evaluation")):
                 if i >= num_samples:
                     break
                 
@@ -125,7 +125,7 @@ class MulliVCEvaluator:
         all_metrics = []
         
         with torch.no_grad():
-            for i in tqdm(range(num_samples), desc="Évaluation cross-linguale"):
+            for i in tqdm(range(num_samples), desc="Cross-lingual evaluation"):
                 # Get a source sample
                 source_batch = next(iter(source_dataloader))
                 source_audio = source_batch['audio'].to(self.device)
@@ -197,35 +197,35 @@ class MulliVCEvaluator:
             output_path: Path to the report.
         """
         report = f"""
-# Rapport d'évaluation MulliVC
+    # MulliVC Evaluation Report
 
-## Métriques de qualité
+    ## Quality Metrics
 
-### Similarité du locuteur
-- Score de similarité: {metrics.get('speaker_similarity', 0):.3f}
+    ### Speaker Similarity
+    - Similarity score: {metrics.get('speaker_similarity', 0):.3f}
 
-### Préservation du contenu
+    ### Content Preservation
 - Word Error Rate (WER): {metrics.get('wer', 0):.3f}
 - Character Error Rate (CER): {metrics.get('cer', 0):.3f}
 
-### Qualité audio
-- Centroïde spectral: {metrics.get('spectral_centroid', 0):.3f}
+    ### Audio Quality
+    - Spectral centroid: {metrics.get('spectral_centroid', 0):.3f}
 - Spectral rolloff: {metrics.get('spectral_rolloff', 0):.3f}
-- Taux de passage par zéro: {metrics.get('zero_crossing_rate', 0):.3f}
-- Similarité MFCC: {metrics.get('mfcc_similarity', 0):.3f}
+    - Zero-crossing rate: {metrics.get('zero_crossing_rate', 0):.3f}
+    - MFCC similarity: {metrics.get('mfcc_similarity', 0):.3f}
 
-## Interprétation
+    ## Interpretation
 
-- **Similarité du locuteur** (>0.8): Excellente conversion du timbre
-- **WER** (<0.1): Excellente préservation du contenu
-- **CER** (<0.05): Excellente préservation du contenu
-- **Qualité audio**: Métriques objectives de la qualité du signal
+    - **Speaker similarity** (>0.8): Excellent timbre conversion
+    - **WER** (<0.1): Excellent content preservation
+    - **CER** (<0.05): Excellent content preservation
+    - **Audio quality**: Objective signal-quality metrics
 
-## Recommandations
+    ## Recommendations
 
-- Si la similarité du locuteur est faible, ajuster les paramètres du timbre encoder
-- Si le WER/CER est élevé, améliorer la préservation du contenu
-- Si la qualité audio est faible, optimiser le vocoder
+    - If speaker similarity is low, adjust the timbre encoder settings
+    - If WER/CER is high, improve content preservation
+    - If audio quality is low, optimize the vocoder
 """
         
         with open(output_path, 'w') as f:
@@ -233,17 +233,17 @@ class MulliVCEvaluator:
 
 
 def main():
-    parser = argparse.ArgumentParser(description='Évaluation MulliVC')
+    parser = argparse.ArgumentParser(description='MulliVC evaluation')
     parser.add_argument('--config', type=str, default='configs/mullivc_config.yaml',
-                       help='Chemin vers le fichier de configuration')
+                       help='Path to the configuration file')
     parser.add_argument('--checkpoint', type=str, required=True,
-                       help='Chemin vers le checkpoint du modèle')
+                       help='Path to the model checkpoint')
     parser.add_argument('--output_dir', type=str, default='evaluation_results',
-                       help='Dossier de sortie pour les résultats')
+                       help='Output directory for results')
     parser.add_argument('--num_samples', type=int, default=100,
-                       help='Nombre d\'échantillons à évaluer')
+                       help='Number of samples to evaluate')
     parser.add_argument('--cross_lingual', action='store_true',
-                       help='Évaluer la conversion cross-linguale')
+                       help='Evaluate cross-lingual conversion')
     
     args = parser.parse_args()
     
@@ -255,7 +255,7 @@ def main():
     val_dataloader = create_dataloader(evaluator.config, split='validation')
     
     # Standard evaluation
-    print("Évaluation standard...")
+    print("Running standard evaluation...")
     metrics = evaluator.evaluate_dataset(
         val_dataloader,
         os.path.join(args.output_dir, 'standard'),
@@ -264,7 +264,7 @@ def main():
     
     # Cross-lingual evaluation if requested
     if args.cross_lingual:
-        print("Évaluation cross-linguale...")
+        print("Running cross-lingual evaluation...")
         cross_lingual_metrics = evaluator.evaluate_cross_lingual(
             train_dataloader,
             val_dataloader,
@@ -279,8 +279,8 @@ def main():
     report_path = os.path.join(args.output_dir, 'evaluation_report.md')
     evaluator.generate_evaluation_report(metrics, report_path)
     
-    print(f"Évaluation terminée. Résultats dans {args.output_dir}")
-    print(f"Rapport généré: {report_path}")
+    print(f"Evaluation completed. Results saved in {args.output_dir}")
+    print(f"Report generated: {report_path}")
 
 
 if __name__ == '__main__':

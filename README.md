@@ -10,6 +10,7 @@ The MulliVC system is composed of several key components:
 - **Timbre Encoder**: Encodes the speaker's global timbre
 - **Fine-grained Timbre Conformer**: Captures fine-grained timbre details
 - **Mel Decoder**: Generates synthetic mel spectrograms
+- **HiFi-GAN Vocoder**: Converts generated mels back to waveform audio
 - **Discriminator (GAN)**: Improves the quality of the generated spectrogram
 
 ## 📦 Installation
@@ -29,6 +30,9 @@ $HOME/.local/bin/uv venv .venv --python 3.13
 # Install the verified dependency set
 $HOME/.local/bin/uv pip install --python .venv/bin/python -r requirements.txt
 
+# The first waveform generation also downloads the pretrained HiFi-GAN weights
+# into pretrained_models/
+
 # Test the installation
 .venv/bin/python test_system.py
 ```
@@ -43,7 +47,14 @@ python train.py --config configs/mullivc_config.yaml
 
 # Resume from a checkpoint
 python train.py --config configs/mullivc_config.yaml --resume checkpoints/checkpoint_epoch_10.pt
+
+# Runpod-oriented training
+python train.py --config configs/mullivc_runpod.yaml
 ```
+
+For a cloud training checklist and staged Runpod commands, see `docs/runpod_training.md`.
+
+Cycle consistency is enabled by default and now uses real generated waveforms through a pretrained HiFi-GAN vocoder. Inference and demo conversion also use the same real vocoder path rather than Griffin-Lim reconstruction.
 
 ### Inference
 
@@ -151,7 +162,7 @@ MulliVC/
 ### 3-stage training
 1. **Stage 1**: Standard training (monolingual)
 2. **Stage 2**: Simulated cross conversion
-3. **Stage 3**: Cycle consistency
+3. **Stage 3**: Cycle consistency on generated waveform audio
 
 ## 🚀 Quick start
 

@@ -68,9 +68,6 @@ class MelDecoder(nn.Module):
             nn.Dropout(dropout),
             nn.Linear(hidden_dim // 2, output_dim)
         )
-        
-        # Final activation
-        self.output_activation = nn.Tanh()
     
     def forward(
         self, 
@@ -109,7 +106,6 @@ class MelDecoder(nn.Module):
         
         # Output projection
         mel_spec = self.output_projection(x)
-        mel_spec = self.output_activation(mel_spec)
         
         return mel_spec
 

@@ -28,15 +28,6 @@ class MulliVCInference:
         
         # Audio processor
         self.audio_processor = AudioProcessor(self.config)
-        
-        # Load the HiFi-GAN vocoder (placeholder)
-        self.vocoder = self._load_vocoder()
-    
-    def _load_vocoder(self):
-        """Loads the HiFi-GAN vocoder."""
-        # Placeholder - to be implemented with the real HiFi-GAN
-        print("Attention: Vocoder HiFi-GAN non implémenté, utilisation d'un placeholder")
-        return None
     
     def load_audio(self, audio_path: str) -> torch.Tensor:
         """Loads an audio file."""
@@ -97,16 +88,7 @@ class MulliVCInference:
     
     def _mel_to_audio(self, mel_spec: torch.Tensor) -> torch.Tensor:
         """Converts a mel spectrogram to audio."""
-        if self.vocoder is not None:
-            # Use the real HiFi-GAN vocoder
-            with torch.no_grad():
-                audio = self.vocoder(mel_spec)
-        else:
-            # Use the simple approximation
-            audio = self.audio_processor.mel_to_audio(mel_spec.squeeze(0))
-            audio = audio.unsqueeze(0)  # (1, samples)
-        
-        return audio
+        return self.audio_processor.mel_to_audio(mel_spec)
     
     def _save_audio(self, audio: torch.Tensor, output_path: str):
         """Saves audio."""
@@ -143,9 +125,9 @@ class MulliVCInference:
             try:
                 self.convert_voice(source_path, target_speaker_audio_path, output_path)
                 output_paths.append(output_path)
-                print(f"Converti: {source_path} -> {output_path}")
+                print(f"Converted: {source_path} -> {output_path}")
             except Exception as e:
-                print(f"Erreur lors de la conversion de {source_path}: {e}")
+                print(f"Error converting {source_path}: {e}")
         
         return output_paths
     
@@ -170,7 +152,7 @@ class MulliVCInference:
         Returns:
             output_path: Path to the converted audio.
         """
-        print(f"Conversion cross-linguale: {source_language} -> {target_language}")
+        print(f"Cross-lingual conversion: {source_language} -> {target_language}")
         
         # Use standard conversion
         return self.convert_voice(
@@ -236,23 +218,23 @@ class MulliVCInference:
 
 
 def main():
-    parser = argparse.ArgumentParser(description='Inférence MulliVC')
+    parser = argparse.ArgumentParser(description='MulliVC inference')
     parser.add_argument('--config', type=str, default='configs/mullivc_config.yaml',
-                       help='Chemin vers le fichier de configuration')
+                       help='Path to the configuration file')
     parser.add_argument('--checkpoint', type=str, required=True,
-                       help='Chemin vers le checkpoint du modèle')
+                       help='Path to the model checkpoint')
     parser.add_argument('--source_audio', type=str, required=True,
-                       help='Chemin vers l\'audio source')
+                       help='Path to the source audio')
     parser.add_argument('--target_speaker_audio', type=str, required=True,
-                       help='Chemin vers l\'audio du locuteur cible')
+                       help='Path to the target speaker audio')
     parser.add_argument('--output', type=str, required=True,
-                       help='Chemin de sortie pour l\'audio converti')
+                       help='Output path for the converted audio')
     parser.add_argument('--source_language', type=str, default='en',
-                       help='Langue source')
+                       help='Source language')
     parser.add_argument('--target_language', type=str, default='fongbe',
-                       help='Langue cible')
+                       help='Target language')
     parser.add_argument('--evaluate', action='store_true',
-                       help='Évaluer la qualité de la conversion')
+                       help='Evaluate conversion quality')
     
     args = parser.parse_args()
     
@@ -275,7 +257,7 @@ def main():
             args.output
         )
     
-    print(f"Conversion terminée: {output_path}")
+    print(f"Conversion completed: {output_path}")
     
     # Evaluate if requested
     if args.evaluate:
@@ -285,7 +267,7 @@ def main():
             output_path
         )
         
-        print("Métriques d'évaluation:")
+        print("Evaluation metrics:")
         for metric, value in metrics.items():
             print(f"  {metric}: {value:.3f}")
 

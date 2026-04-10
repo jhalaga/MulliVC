@@ -43,32 +43,47 @@ class MulliVCDataset(Dataset):
         max_samples: Optional[int] = None
     ):
         self.config = config
+        self.data_config = config['data']
         self.split = split
         self.max_samples = max_samples
-        
-        # Load datasets
-        self.libritts_data = self._load_libritts()
-        self.fongbe_data = self._load_fongbe()
-        
-        # Create sample lists
-        self.samples = self._create_samples()
-        
-        if max_samples:
-            self.samples = self.samples[:max_samples]
+        self.sample_rate = self.data_config['sample_rate']
+        self.use_streaming = self.data_config.get('use_streaming', True)
+        self.fongbe_configs = self.data_config.get('fongbe_configs', ['female', 'male'])
 
-    def _split_name(self, train_split: str, eval_split: str) -> str:
+        self.sources = self._load_sources()
+        self.samples = self._build_samples()
+
+    def _split_name(
+        self,
+        train_key: str,
+        eval_key: str,
+        default_train: str,
+        default_eval: str
+    ) -> str:
         """Maps repository split names onto dataset split names."""
         if self.split in {'validation', 'val', 'dev', 'test'}:
-            return eval_split
-        return train_split
+            return self.data_config.get(eval_key, default_eval)
+        return self.data_config.get(train_key, default_train)
 
-    def _sample_limit(self, default_limit: int, num_sources: int = 1) -> int:
-        """Calculates a small per-source limit when max_samples is requested."""
-        if not self.max_samples:
-            return default_limit
+    def _default_max_samples(self) -> Optional[int]:
+        """Returns the default per-split sample cap from config."""
+        if self.split in {'validation', 'val', 'dev', 'test'}:
+            limit = self.data_config.get('max_validation_samples', 256)
+        else:
+            limit = self.data_config.get('max_train_samples', 2000)
 
-        per_source_limit = max(1, self.max_samples // max(1, num_sources))
-        return min(default_limit, per_source_limit)
+        if self.use_streaming and limit is None:
+            return 256 if self.split in {'validation', 'val', 'dev', 'test'} else 2000
+
+        return limit
+
+    def _prefetch_limit(self, num_sources: int) -> Optional[int]:
+        """Computes a per-source cap for streaming mode."""
+        total_limit = self.max_samples if self.max_samples is not None else self._default_max_samples()
+        if total_limit is None:
+            return None
+
+        return max(1, (int(total_limit) + max(1, num_sources) - 1) // max(1, num_sources))
 
     def _decode_audio(self, audio_info: Dict, sample_rate: int) -> torch.Tensor:
         """Decodes dataset audio payloads without requiring torchcodec."""
@@ -84,7 +99,7 @@ class MulliVCDataset(Dataset):
             elif audio_path is not None:
                 audio_array, audio_sr = sf.read(audio_path, always_2d=False)
             else:
-                raise ValueError('Aucun contenu audio décodable trouvé dans l\'échantillon.')
+                raise ValueError('No decodable audio content found in the sample.')
 
             audio_tensor = torch.from_numpy(audio_array).float()
 
@@ -99,100 +114,186 @@ class MulliVCDataset(Dataset):
             ).squeeze(0)
 
         return audio_tensor
-    
-    def _load_libritts(self) -> List[Dict]:
-        """Loads the LibriTTS dataset."""
+
+    def _load_sources(self) -> List[Dict]:
+        """Loads dataset sources according to the active split and mode."""
+        source_specs = [
+            {
+                'repo_name': 'mythicinfinity/libritts',
+                'config_name': self.data_config.get('libritts_config', 'clean'),
+                'split_name': self._split_name(
+                    'libritts_train_split',
+                    'libritts_validation_split',
+                    'train.clean.360',
+                    'dev.clean'
+                ),
+                'dataset_label': 'libritts',
+                'language': 'en',
+                'text_key': 'text_normalized',
+                'speaker_key': 'speaker_id'
+            }
+        ]
+
+        for config_name in self.fongbe_configs:
+            source_specs.append({
+                'repo_name': 'beethogedeon/fongbe-speech',
+                'config_name': config_name,
+                'split_name': self._split_name(
+                    'fongbe_train_split',
+                    'fongbe_validation_split',
+                    'train',
+                    'test'
+                ),
+                'dataset_label': 'fongbe',
+                'language': 'fongbe',
+                'text_key': 'text',
+                'speaker_key': 'speaker_id'
+            })
+
+        sample_limit = self._prefetch_limit(len(source_specs))
+        sources = []
+        for spec in source_specs:
+            if self.use_streaming:
+                sources.append(self._load_streaming_source(spec, sample_limit))
+            else:
+                sources.append(self._load_indexed_source(spec))
+
+        return [source for source in sources if self._source_length(source) > 0]
+
+    def _load_streaming_source(self, spec: Dict, sample_limit: Optional[int]) -> Dict:
+        """Loads a bounded streaming subset into memory for local experimentation."""
         try:
-            # Load from HuggingFace
             dataset = load_dataset(
-                "mythicinfinity/libritts",
-                "clean",
-                split=self._split_name("train.clean.360", "dev.clean"),
+                spec['repo_name'],
+                spec['config_name'],
+                split=spec['split_name'],
                 streaming=True
             )
             dataset = dataset.cast_column('audio', Audio(decode=False))
-            
-            # Convert to a list for easier access
-            libritts_samples = []
-            sample_limit = self._sample_limit(1000)
-            for i, sample in enumerate(dataset):
-                if i >= sample_limit:
+
+            samples = []
+            for index, sample in enumerate(dataset):
+                if sample_limit is not None and index >= sample_limit:
                     break
-                libritts_samples.append({
-                    'audio': self._decode_audio(
-                        sample['audio'],
-                        self.config['data']['sample_rate']
-                    ),
-                    'text': sample['text_normalized'],
-                    'speaker_id': sample['speaker_id'],
-                    'language': 'en'
+                samples.append({
+                    'audio': self._decode_audio(sample['audio'], self.sample_rate),
+                    'text': sample[spec['text_key']],
+                    'speaker_id': str(sample[spec['speaker_key']]),
+                    'language': spec['language'],
+                    'dataset': spec['dataset_label']
                 })
-            
-            return libritts_samples
-            
-        except Exception as e:
-            print(f"Erreur lors du chargement de LibriTTS: {e}")
-            return []
-    
-    def _load_fongbe(self) -> List[Dict]:
-        """Loads the Fongbe dataset."""
+
+            return {
+                'kind': 'streaming',
+                'samples': samples,
+                **spec
+            }
+        except Exception as exc:
+            print(
+                f"Error loading {spec['repo_name']}"
+                f"/{spec['config_name']} ({spec['split_name']}): {exc}"
+            )
+            return {
+                'kind': 'streaming',
+                'samples': [],
+                **spec
+            }
+
+    def _load_indexed_source(self, spec: Dict) -> Dict:
+        """Loads an indexable dataset for longer cloud training runs."""
         try:
-            fongbe_samples = []
-            sample_limit = self._sample_limit(500, num_sources=2)
+            dataset = load_dataset(
+                spec['repo_name'],
+                spec['config_name'],
+                split=spec['split_name'],
+                streaming=False
+            )
+            dataset = dataset.cast_column('audio', Audio(decode=False))
 
-            for config_name in ['female', 'male']:
-                dataset = load_dataset(
-                    "beethogedeon/fongbe-speech",
-                    config_name,
-                    split=self._split_name('train', 'test'),
-                    streaming=True
-                )
-                dataset = dataset.cast_column('audio', Audio(decode=False))
+            return {
+                'kind': 'indexed',
+                'dataset': dataset,
+                **spec
+            }
+        except Exception as exc:
+            print(
+                f"Error loading {spec['repo_name']}"
+                f"/{spec['config_name']} ({spec['split_name']}): {exc}"
+            )
+            return {
+                'kind': 'indexed',
+                'dataset': None,
+                **spec
+            }
 
-                for i, sample in enumerate(dataset):
-                    if i >= sample_limit:
-                        break
-                    fongbe_samples.append({
-                        'audio': self._decode_audio(
-                            sample['audio'],
-                            self.config['data']['sample_rate']
-                        ),
-                        'text': sample['text'],
-                        'speaker_id': str(sample['speaker_id']),
-                        'language': 'fongbe'
-                    })
-            
-            return fongbe_samples
-            
-        except Exception as e:
-            print(f"Erreur lors du chargement de Fongbe: {e}")
+    def _source_length(self, source: Dict) -> int:
+        """Returns the number of available samples for a source."""
+        if source['kind'] == 'streaming':
+            return len(source['samples'])
+
+        if source.get('dataset') is None:
+            return 0
+
+        return len(source['dataset'])
+
+    def _build_samples(self) -> List[Dict]:
+        """Builds an interleaved sample index across all sources."""
+        if not self.sources:
             return []
-    
-    def _create_samples(self) -> List[Dict]:
-        """Creates the sample list for training."""
-        samples = []
-        
-        # Add LibriTTS samples
-        for sample in self.libritts_data:
-            samples.append({
-                'audio': sample['audio'],
-                'text': sample['text'],
-                'speaker_id': sample['speaker_id'],
-                'language': sample['language'],
-                'dataset': 'libritts'
-            })
-        
-        # Add Fongbe samples
-        for sample in self.fongbe_data:
-            samples.append({
-                'audio': sample['audio'],
-                'text': sample['text'],
-                'speaker_id': sample['speaker_id'],
-                'language': sample['language'],
-                'dataset': 'fongbe'
-            })
-        
-        return samples
+
+        sample_refs = []
+        total_limit = self.max_samples if self.max_samples is not None else self._default_max_samples()
+        max_source_length = max(self._source_length(source) for source in self.sources)
+
+        for item_index in range(max_source_length):
+            for source_index, source in enumerate(self.sources):
+                if item_index >= self._source_length(source):
+                    continue
+
+                if source['kind'] == 'streaming':
+                    sample_refs.append(source['samples'][item_index])
+                else:
+                    sample_refs.append({
+                        'source_index': source_index,
+                        'item_index': item_index
+                    })
+
+                if total_limit is not None and len(sample_refs) >= total_limit:
+                    return sample_refs
+
+        return sample_refs
+
+    def _load_indexed_sample(self, sample_ref: Dict) -> Dict:
+        """Decodes one sample from an indexed source on demand."""
+        source = self.sources[sample_ref['source_index']]
+        raw_sample = source['dataset'][sample_ref['item_index']]
+
+        return {
+            'audio': self._decode_audio(raw_sample['audio'], self.sample_rate),
+            'text': raw_sample[source['text_key']],
+            'speaker_id': str(raw_sample[source['speaker_key']]),
+            'language': source['language'],
+            'dataset': source['dataset_label']
+        }
+
+    def _sample_metadata(self, sample_ref: Dict) -> Dict:
+        """Returns lightweight metadata for speaker/language grouping."""
+        if 'audio' in sample_ref:
+            return {
+                'text': sample_ref['text'],
+                'speaker_id': sample_ref['speaker_id'],
+                'language': sample_ref['language'],
+                'dataset': sample_ref['dataset']
+            }
+
+        source = self.sources[sample_ref['source_index']]
+        raw_sample = source['dataset'][sample_ref['item_index']]
+        return {
+            'text': raw_sample[source['text_key']],
+            'speaker_id': str(raw_sample[source['speaker_key']]),
+            'language': source['language'],
+            'dataset': source['dataset_label']
+        }
     
     def __len__(self) -> int:
         return len(self.samples)
@@ -200,6 +301,9 @@ class MulliVCDataset(Dataset):
     def __getitem__(self, idx: int) -> Dict:
         """Retrieves a sample from the dataset."""
         sample = self.samples[idx]
+        if 'audio' not in sample:
+            sample = self._load_indexed_sample(sample)
+
         audio_tensor = sample['audio'].clone()
         
         # Normalize audio
@@ -216,41 +320,63 @@ class MulliVCDataset(Dataset):
     def get_speaker_samples(self, speaker_id: str, language: str) -> List[Dict]:
         """Retrieves all samples for a speaker in a given language."""
         speaker_samples = []
-        for sample in self.samples:
-            if (sample['speaker_id'] == speaker_id and 
-                sample['language'] == language):
-                speaker_samples.append(sample)
+        for idx, sample in enumerate(self.samples):
+            metadata = self._sample_metadata(sample)
+            if (
+                metadata['speaker_id'] == speaker_id and
+                metadata['language'] == language
+            ):
+                speaker_samples.append(self[idx])
         return speaker_samples
     
     def get_random_speaker(self, language: str) -> str:
         """Retrieves a random speaker ID for a given language."""
-        language_samples = [s for s in self.samples if s['language'] == language]
-        if not language_samples:
+        speaker_ids = {
+            self._sample_metadata(sample)['speaker_id']
+            for sample in self.samples
+            if self._sample_metadata(sample)['language'] == language
+        }
+        if not speaker_ids:
             return None
-        
-        speaker_ids = list(set([s['speaker_id'] for s in language_samples]))
-        return random.choice(speaker_ids)
+
+        return random.choice(list(speaker_ids))
 
 
 def create_dataloader(
     config: dict,
     split: str = "train",
     batch_size: Optional[int] = None,
-    shuffle: bool = True,
-    num_workers: int = 4
+    shuffle: Optional[bool] = None,
+    num_workers: Optional[int] = None,
+    max_samples: Optional[int] = None
 ) -> DataLoader:
     """Creates a DataLoader for MulliVC."""
-    
-    dataset = MulliVCDataset(config, split=split)
-    
-    batch_size = batch_size or config['data']['batch_size']
+    data_config = config['data']
+
+    if max_samples is None:
+        if split in {'validation', 'val', 'dev'}:
+            max_samples = data_config.get('max_validation_samples')
+        elif split == 'test':
+            max_samples = data_config.get('max_test_samples')
+        else:
+            max_samples = data_config.get('max_train_samples')
+
+    dataset = MulliVCDataset(config, split=split, max_samples=max_samples)
+    if len(dataset) == 0:
+        raise RuntimeError(f"No samples were loaded for split '{split}'.")
+
+    batch_size = batch_size or data_config['batch_size']
+    if shuffle is None:
+        shuffle = split == 'train'
+    if num_workers is None:
+        num_workers = data_config.get('num_workers', 0)
     
     return DataLoader(
         dataset,
         batch_size=batch_size,
         shuffle=shuffle,
         num_workers=num_workers,
-        pin_memory=config['data']['pin_memory'],
+        pin_memory=data_config['pin_memory'],
         collate_fn=collate_fn
     )
 

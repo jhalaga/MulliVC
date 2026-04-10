@@ -6,5 +6,9 @@ __pycache__
 
 *.pt
 
+/pretrained_models
+
 /smoke_demo
 /smoke_inference
+/hifigan_demo
+/hifigan_inference

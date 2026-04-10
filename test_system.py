@@ -19,7 +19,7 @@ from utils.model_utils import count_parameters, print_model_summary
 
 def test_imports():
     """Tests that all imports work."""
-    print("Test des imports...")
+    print("Testing imports...")
     
     try:
         from models.content_encoder import ContentEncoder
@@ -28,25 +28,25 @@ def test_imports():
         from models.mel_decoder import MelDecoder
         from models.discriminator import PatchGANDiscriminator
         from models.losses import CombinedLoss
-        print("✓ Imports des modèles réussis")
+        print("✓ Model imports succeeded")
     except Exception as e:
-        print(f"✗ Erreur lors des imports des modèles: {e}")
+        print(f"✗ Error importing models: {e}")
         return False
     
     try:
         from utils.audio_utils import MelSpectrogram, AudioProcessor
         from utils.data_utils import MulliVCDataset, create_dataloader
         from utils.model_utils import load_pretrained_models, save_checkpoint
-        print("✓ Imports des utilitaires réussis")
+        print("✓ Utility imports succeeded")
     except Exception as e:
-        print(f"✗ Erreur lors des imports des utilitaires: {e}")
+        print(f"✗ Error importing utilities: {e}")
         return False
     
     try:
         from evaluation.metrics import SpeakerSimilarityMetric, ASRMetric, AudioQualityMetric
-        print("✓ Imports des métriques réussis")
+        print("✓ Metric imports succeeded")
     except Exception as e:
-        print(f"✗ Erreur lors des imports des métriques: {e}")
+        print(f"✗ Error importing metrics: {e}")
         return False
     
     return True
@@ -54,30 +54,30 @@ def test_imports():
 
 def test_config_loading():
     """Tests configuration loading."""
-    print("\nTest du chargement de configuration...")
+    print("\nTesting configuration loading...")
     
     try:
         config = load_config('configs/mullivc_config.yaml')
-        print("✓ Configuration chargée avec succès")
+        print("✓ Configuration loaded successfully")
         
         # Check the main sections
         required_sections = ['data', 'model', 'training', 'paths']
         for section in required_sections:
             if section in config:
-                print(f"✓ Section '{section}' présente")
+                print(f"✓ Section '{section}' is present")
             else:
-                print(f"✗ Section '{section}' manquante")
+                print(f"✗ Missing section '{section}'")
                 return False
         
         return True
     except Exception as e:
-        print(f"✗ Erreur lors du chargement de la configuration: {e}")
+        print(f"✗ Error loading configuration: {e}")
         return False
 
 
 def test_model_creation():
     """Tests model creation."""
-    print("\nTest de création du modèle...")
+    print("\nTesting model creation...")
     
     try:
         # Load the configuration
@@ -85,7 +85,7 @@ def test_model_creation():
         
         # Create the model
         model = create_mullivc_model('configs/mullivc_config.yaml')
-        print("✓ Modèle créé avec succès")
+        print("✓ Model created successfully")
         
         # Check components
         components = [
@@ -98,20 +98,20 @@ def test_model_creation():
         
         for component in components:
             if hasattr(model, component):
-                print(f"✓ Composant '{component}' présent")
+                print(f"✓ Component '{component}' is present")
             else:
-                print(f"✗ Composant '{component}' manquant")
+                print(f"✗ Missing component '{component}'")
                 return False
         
         return True
     except Exception as e:
-        print(f"✗ Erreur lors de la création du modèle: {e}")
+        print(f"✗ Error creating model: {e}")
         return False
 
 
 def test_model_forward():
     """Tests the model forward pass."""
-    print("\nTest du forward pass...")
+    print("\nTesting the forward pass...")
     
     try:
         # Create the model
@@ -144,20 +144,20 @@ def test_model_forward():
         
         for output in expected_outputs:
             if output in outputs:
-                print(f"✓ Sortie '{output}' générée: {outputs[output].shape}")
+                print(f"✓ Output '{output}' generated: {outputs[output].shape}")
             else:
-                print(f"✗ Sortie '{output}' manquante")
+                print(f"✗ Missing output '{output}'")
                 return False
         
         return True
     except Exception as e:
-        print(f"✗ Erreur lors du forward pass: {e}")
+        print(f"✗ Error during the forward pass: {e}")
         return False
 
 
 def test_audio_processing():
     """Tests audio processing."""
-    print("\nTest du traitement audio...")
+    print("\nTesting audio processing...")
     
     try:
         config = load_config('configs/mullivc_config.yaml')
@@ -171,21 +171,21 @@ def test_audio_processing():
         
         # Test mel spectrogram conversion
         mel_spec = audio_processor.audio_to_mel(audio)
-        print(f"✓ Mél-spectrogramme généré: {mel_spec.shape}")
+        print(f"✓ Mel spectrogram generated: {mel_spec.shape}")
         
-        # Test de conversion inverse
+        # Test inverse conversion
         reconstructed_audio = audio_processor.mel_to_audio(mel_spec)
-        print(f"✓ Audio reconstruit: {reconstructed_audio.shape}")
+        print(f"✓ Reconstructed audio: {reconstructed_audio.shape}")
         
         return True
     except Exception as e:
-        print(f"✗ Erreur lors du traitement audio: {e}")
+        print(f"✗ Error during audio processing: {e}")
         return False
 
 
 def test_loss_computation():
     """Tests loss computation."""
-    print("\nTest du calcul des pertes...")
+    print("\nTesting loss computation...")
     
     try:
         config = load_config('configs/mullivc_config.yaml')
@@ -219,46 +219,46 @@ def test_loss_computation():
         expected_losses = ['total', 'reconstruction', 'timbre', 'pitch', 'adversarial', 'asr']
         for loss_name in expected_losses:
             if loss_name in losses:
-                print(f"✓ Perte '{loss_name}': {losses[loss_name].item():.4f}")
+                print(f"✓ Loss '{loss_name}': {losses[loss_name].item():.4f}")
             else:
-                print(f"✗ Perte '{loss_name}' manquante")
+                print(f"✗ Missing loss '{loss_name}'")
                 return False
         
         return True
     except Exception as e:
-        print(f"✗ Erreur lors du calcul des pertes: {e}")
+        print(f"✗ Error during loss computation: {e}")
         return False
 
 
 def test_model_parameters():
     """Tests model parameters."""
-    print("\nTest des paramètres du modèle...")
+    print("\nTesting model parameters...")
     
     try:
         model = create_mullivc_model('configs/mullivc_config.yaml')
         
         # Count parameters
         param_counts = count_parameters(model)
-        print(f"✓ Paramètres totaux: {param_counts['total']:,}")
-        print(f"✓ Paramètres entraînables: {param_counts['trainable']:,}")
-        print(f"✓ Paramètres non-entraînables: {param_counts['non_trainable']:,}")
+        print(f"✓ Total parameters: {param_counts['total']:,}")
+        print(f"✓ Trainable parameters: {param_counts['trainable']:,}")
+        print(f"✓ Non-trainable parameters: {param_counts['non_trainable']:,}")
         
         # Verify that the model has parameters
         if param_counts['total'] > 0:
-            print("✓ Modèle a des paramètres")
+            print("✓ Model has parameters")
         else:
-            print("✗ Modèle n'a pas de paramètres")
+            print("✗ Model has no parameters")
             return False
         
         return True
     except Exception as e:
-        print(f"✗ Erreur lors du test des paramètres: {e}")
+        print(f"✗ Error testing parameters: {e}")
         return False
 
 
 def test_gradient_flow():
     """Tests gradient flow."""
-    print("\nTest du flux des gradients...")
+    print("\nTesting gradient flow...")
     
     try:
         model = create_mullivc_model('configs/mullivc_config.yaml')
@@ -285,32 +285,32 @@ def test_gradient_flow():
                 break
         
         if has_gradients:
-            print("✓ Gradients calculés avec succès")
+            print("✓ Gradients computed successfully")
         else:
-            print("✗ Aucun gradient calculé")
+            print("✗ No gradients were computed")
             return False
         
         return True
     except Exception as e:
-        print(f"✗ Erreur lors du test des gradients: {e}")
+        print(f"✗ Error testing gradients: {e}")
         return False
 
 
 def run_all_tests():
     """Runs all tests."""
     print("=" * 60)
-    print("TESTS DU SYSTÈME MULLIVC")
+    print("MULLIVC SYSTEM TESTS")
     print("=" * 60)
     
     tests = [
         ("Imports", test_imports),
         ("Configuration", test_config_loading),
-        ("Création du modèle", test_model_creation),
+        ("Model creation", test_model_creation),
         ("Forward pass", test_model_forward),
-        ("Traitement audio", test_audio_processing),
-        ("Calcul des pertes", test_loss_computation),
-        ("Paramètres du modèle", test_model_parameters),
-        ("Flux des gradients", test_gradient_flow)
+        ("Audio processing", test_audio_processing),
+        ("Loss computation", test_loss_computation),
+        ("Model parameters", test_model_parameters),
+        ("Gradient flow", test_gradient_flow)
     ]
     
     passed = 0
@@ -320,21 +320,21 @@ def run_all_tests():
         print(f"\n{'='*20} {test_name} {'='*20}")
         try:
             if test_func():
-                print(f"✓ {test_name} réussi")
+                print(f"✓ {test_name} passed")
                 passed += 1
             else:
-                print(f"✗ {test_name} échoué")
+                print(f"✗ {test_name} failed")
         except Exception as e:
-            print(f"✗ {test_name} échoué avec erreur: {e}")
+            print(f"✗ {test_name} failed with error: {e}")
     
     print("\n" + "=" * 60)
-    print(f"RÉSULTATS: {passed}/{total} tests réussis")
+    print(f"RESULTS: {passed}/{total} tests passed")
     print("=" * 60)
     
     if passed == total:
-        print("🎉 Tous les tests sont passés! Le système MulliVC est prêt.")
+        print("All tests passed. The MulliVC system is ready.")
     else:
-        print("⚠️  Certains tests ont échoué. Vérifiez les erreurs ci-dessus.")
+        print("Some tests failed. Check the errors above.")
     
     return passed == total
 

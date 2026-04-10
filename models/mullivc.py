@@ -12,6 +12,7 @@ from .fine_grained_conformer import FineGrainedTimbreConformer
 from .mel_decoder import MelDecoder
 from .discriminator import PatchGANDiscriminator
 from .losses import CombinedLoss
+from utils.audio_utils import AudioProcessor
 
 
 class MulliVC(nn.Module):
@@ -23,6 +24,11 @@ class MulliVC(nn.Module):
         super().__init__()
         
         self.config = config
+        self.enable_cycle_consistency = config.get('training', {}).get(
+            'enable_cycle_consistency',
+            True
+        )
+        self.audio_processor = AudioProcessor(config)
         
         # Initialize components
         self.content_encoder = ContentEncoder(
@@ -82,6 +88,12 @@ class MulliVC(nn.Module):
         Returns:
             outputs: Dictionary containing all outputs.
         """
+        if source_audio.dim() == 3:
+            source_audio = self._mel_to_audio(source_audio, allow_grad=False)
+
+        if target_timbre_audio.dim() == 3:
+            target_timbre_audio = self._mel_to_audio(target_timbre_audio, allow_grad=False)
+
         # Encode source audio content
         content_features, content_pooled = self.content_encoder(source_audio)
         
@@ -120,17 +132,18 @@ class MulliVC(nn.Module):
     
     def _audio_to_mel(self, audio: torch.Tensor) -> torch.Tensor:
         """Converts audio to a mel spectrogram."""
-        # This function should use the same transform as in audio_utils
-        # For now, a placeholder is used
-        batch_size, samples = audio.shape
-        n_mel_channels = self.config['data']['n_mel_channels']
-        time_frames = samples // 256  # Approximation
-        
-        # Placeholder - to be replaced with the real transform
-        mel_spec = torch.randn(batch_size, n_mel_channels, time_frames, device=audio.device)
-        
-        return mel_spec
-    
+        if audio.dim() == 1:
+            audio = audio.unsqueeze(0)
+
+        return self.audio_processor.audio_to_mel(audio)
+
+    def _mel_to_audio(self, mel_spec: torch.Tensor, allow_grad: bool = False) -> torch.Tensor:
+        """Converts mel spectrograms into waveform audio with the configured vocoder."""
+        return self.audio_processor.mel_to_audio(
+            mel_spec,
+            allow_grad=allow_grad
+        )
+
     def compute_losses(
         self,
         outputs: Dict[str, torch.Tensor],
@@ -180,23 +193,18 @@ class MulliVC(nn.Module):
         Returns:
             losses: Dictionary of losses.
         """
-        # Stage 1: Standard training (monolingual)
-        step1_losses = self._training_step_1(batch)
-        
-        # Stage 2: Simulated cross conversion
-        step2_losses = self._training_step_2(batch)
-        
-        # Stage 3: Cycle consistency
-        step3_losses = self._training_step_3(batch)
-        
-        # Combine all losses
+        stage_losses = [
+            self._training_step_1(batch),
+            self._training_step_2(batch)
+        ]
+
+        if self.enable_cycle_consistency:
+            stage_losses.append(self._training_step_3(batch))
+
+        # Combine all enabled stage losses
         total_losses = {}
-        for key in step1_losses.keys():
-            total_losses[key] = (
-                step1_losses[key] + 
-                step2_losses[key] + 
-                step3_losses[key]
-            ) / 3
+        for key in stage_losses[0].keys():
+            total_losses[key] = sum(losses[key] for losses in stage_losses) / len(stage_losses)
         
         return total_losses
     
@@ -229,6 +237,10 @@ class MulliVC(nn.Module):
         
         # Forward pass
         outputs = self.forward(source_audio, target_timbre_audio)
+        outputs['generated_audio'] = self._mel_to_audio(
+            outputs['generated_mel'],
+            allow_grad=True
+        )
         
         # Targets for conversion
         targets = {
@@ -237,7 +249,7 @@ class MulliVC(nn.Module):
         }
         
         # Compute losses
-        losses = self.compute_losses(outputs, targets, is_real=False)
+        losses = self.compute_losses(outputs, targets, is_real=True)
         
         return losses
     
@@ -249,13 +261,14 @@ class MulliVC(nn.Module):
         
         # Forward pass
         outputs = self.forward(source_audio, target_timbre_audio)
+        generated_audio = self._mel_to_audio(
+            outputs['generated_mel'],
+            allow_grad=True
+        )
         
         # Cycle reconstruction
-        generated_audio = outputs.get('generated_audio')
-        cycle_source_audio = generated_audio if generated_audio is not None else source_audio
-
         reconstructed_outputs = self.forward(
-            cycle_source_audio,
+            generated_audio,
             source_audio
         )
         
@@ -312,8 +325,9 @@ class MulliVC(nn.Module):
 
 def create_mullivc_model(config_path: str) -> MulliVC:
     """Creates a MulliVC model from a configuration file."""
-    with open(config_path, 'r') as f:
-        config = yaml.safe_load(f)
+    from utils.data_utils import load_config
+
+    config = load_config(config_path)
     
     model = MulliVC(config)
     return model
