@@ -6,7 +6,6 @@ import torchaudio
 import librosa
 import numpy as np
 from typing import Tuple, Optional
-import soundfile as sf
 
 
 class MelSpectrogram:

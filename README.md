@@ -19,11 +19,18 @@ The MulliVC system is composed of several key components:
 git clone <repository-url>
 cd MulliVC
 
-# Install dependencies
-pip install -r requirements.txt
+# Install uv once if it is not already available
+curl -LsSf https://astral.sh/uv/install.sh | sh
+
+# Provision Python 3.13 and create the project virtual environment
+$HOME/.local/bin/uv python install 3.13
+$HOME/.local/bin/uv venv .venv --python 3.13
+
+# Install the verified dependency set
+$HOME/.local/bin/uv pip install --python .venv/bin/python -r requirements.txt
 
 # Test the installation
-python test_system.py
+.venv/bin/python test_system.py
 ```
 
 ## 🚀 Usage
