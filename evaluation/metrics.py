@@ -8,7 +8,6 @@ import numpy as np
 from typing import Dict, List, Optional, Tuple
 import librosa
 from scipy.spatial.distance import cosine
-import whisper
 from transformers import Wav2Vec2ForCTC, Wav2Vec2Processor
 from speechbrain.inference import EncoderClassifier
 
@@ -141,6 +140,13 @@ class ASRMetric:
     """ASR metric for evaluating content preservation."""
     
     def __init__(self, model_name: str = "openai/whisper-base"):
+        try:
+            import whisper
+        except ImportError as exc:
+            raise ImportError(
+                "openai-whisper is required for ASR metrics. Install the local Python 3.13 requirements to enable Whisper-based evaluation."
+            ) from exc
+
         self.model = whisper.load_model("base")
     
     def compute_wer(

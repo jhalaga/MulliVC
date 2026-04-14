@@ -5,6 +5,74 @@ This repository now supports two training modes:
 - Local-safe mode via `configs/mullivc_config.yaml`
 - Cloud-oriented mode via `configs/mullivc_runpod.yaml`
 
+It also supports a serverless Flash-based smoke run via `scripts/flash_smoke_train.py`.
+
+## Runpod Flash
+
+Runpod Flash is suitable for this repository's bounded smoke training run.
+
+Why it fits:
+
+- Flash queue-based endpoints are explicitly designed for batch jobs and long-running computations.
+- The smoke run in this repository is bounded to a small sample set and a small number of steps.
+- The Flash endpoint added in `scripts/flash_smoke_train.py` returns the remote subprocess result, log tails, and checkpoint file metadata.
+
+Authentication options:
+
+- Browser flow: `.venv/bin/flash login`
+- API key flow: `export RUNPOD_API_KEY=your_api_key_here`
+
+Local prerequisite:
+
+```bash
+uv pip install runpod-flash
+```
+
+Optional local-only evaluation dependency:
+
+```bash
+.venv/bin/python -m pip install -r requirements-eval.txt
+```
+
+Run the Flash smoke training endpoint:
+
+```bash
+.venv/bin/python scripts/flash_smoke_train.py
+```
+
+Check a submitted Flash job later without keeping the launch terminal open:
+
+```bash
+.venv/bin/python scripts/flash_job_control.py status ENDPOINT_ID JOB_ID
+```
+
+Cancel a submitted Flash job:
+
+```bash
+.venv/bin/python scripts/flash_job_control.py cancel ENDPOINT_ID JOB_ID
+```
+
+Useful overrides:
+
+```bash
+.venv/bin/python scripts/flash_smoke_train.py \
+  --epochs 1 \
+  --max-train-samples 256 \
+  --max-val-samples 64 \
+  --steps-per-epoch 10 \
+  --validation-steps 2 \
+  --timeout-seconds 3600
+```
+
+Notes:
+
+- Remote GPU workers currently run Python 3.12.
+- `requirements.txt` is kept Flash-buildable; Whisper-based evaluation stays in `requirements-eval.txt` and is not required for smoke training.
+- The Flash smoke endpoint now targets the `AMPERE_24` pool by default because it matches this repository's 24 GB guidance without forcing the scarce `ADA_24` path.
+- If Flash reports `no gpu availability` or `workers throttled`, that is a Runpod capacity signal for the selected pool rather than a broken `runpod/flash:py3.12-latest` image tag.
+- If you want checkpoint persistence across endpoint recreations, the next step is attaching a Flash network volume.
+- The current Flash endpoint disables W&B for the smoke run and forwards `HF_TOKEN` if it is set locally.
+
 ## Recommended Runpod target
 
 Use a GPU with at least 24 GB VRAM for the first meaningful run.
@@ -17,6 +85,34 @@ Good options:
 - L4 24GB
 
 Avoid very small GPUs. The local MX250-class path is only suitable for smoke tests.
+
+## Flash pod bootstrap
+
+If you want the quickest path on Runpod Flash, create a single GPU pod with SSH enabled and then run:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/jhalaga/MulliVC/ca3d4f76990036ddb729734cde491d516097952c/scripts/runpod_flash_smoke_train.sh -o runpod_flash_smoke_train.sh
+bash runpod_flash_smoke_train.sh
+```
+
+This script will:
+
+- clone the repository
+- check out commit `ca3d4f76990036ddb729734cde491d516097952c`
+- install Python 3.13 with `uv`
+- create `.venv`
+- install `requirements.txt`
+- launch the one-epoch smoke run with W&B disabled
+
+Optional environment variables:
+
+```bash
+export HF_TOKEN=your_token_here
+export REPO_URL=https://github.com/jhalaga/MulliVC.git
+export CHECKOUT_REF=ca3d4f76990036ddb729734cde491d516097952c
+export WORKDIR=$HOME/MulliVC
+export PYTHON_VERSION=3.13
+```
 
 ## Before you start
 

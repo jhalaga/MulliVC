@@ -9,6 +9,5 @@ scipy==1.17.1
 matplotlib==3.10.8
 tqdm==4.67.3
 wandb==0.25.1
-openai-whisper==20250625
 speechbrain==1.1.0
 PyYAML==6.0.3

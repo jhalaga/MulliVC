@@ -1,0 +1,3 @@
+# Optional local evaluation extras.
+# Install on Python 3.13 when you need Whisper-based WER/CER metrics.
+openai-whisper==20250625

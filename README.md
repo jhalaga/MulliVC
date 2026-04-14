@@ -30,6 +30,9 @@ $HOME/.local/bin/uv venv .venv --python 3.13
 # Install the verified dependency set
 $HOME/.local/bin/uv pip install --python .venv/bin/python -r requirements.txt
 
+# Optional: install Whisper-based evaluation extras on local Python 3.13
+$HOME/.local/bin/uv pip install --python .venv/bin/python -r requirements-eval.txt
+
 # The first waveform generation also downloads the pretrained HiFi-GAN weights
 # into pretrained_models/
 
@@ -100,7 +103,7 @@ The datasets are automatically downloaded from HuggingFace on first run.
 ## 🧪 Evaluation
 
 ### Objective metrics
-- **WER/CER**: Intelligibility evaluation with Whisper
+- **WER/CER**: Intelligibility evaluation with Whisper (install `requirements-eval.txt` locally)
 - **SIM**: Speaker similarity with ECAPA-TDNN
 - **Audio quality**: Spectral and temporal metrics
 
@@ -144,7 +147,8 @@ MulliVC/
 ├── inference.py            # Inference script
 ├── demo.py                 # Demo script
 ├── test_system.py          # System tests
-└── requirements.txt        # Dependencies
+├── requirements.txt        # Core training and inference dependencies
+└── requirements-eval.txt   # Optional Whisper evaluation dependency
 ```
 
 ## 🎯 Features
