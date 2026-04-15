@@ -1,0 +1,98 @@
+# Runpod production-oriented configuration for a real full-stream training run.
+data:
+  libritts_path: "data/libritts"
+  fongbe_path: "data/fongbe"
+  use_streaming: true
+  libritts_config: "clean"
+  libritts_train_split: "train.clean.360"
+  libritts_validation_split: "dev.clean"
+  fongbe_configs:
+    - female
+    - male
+  fongbe_train_split: "train"
+  fongbe_validation_split: "test"
+  max_train_samples: null
+  max_validation_samples: 2048
+
+  sample_rate: 22050
+  hop_length: 256
+  win_length: 1024
+  n_mel_channels: 80
+  mel_fmin: 0
+  mel_fmax: 8000
+
+  max_audio_length: 10.0
+  min_audio_length: 1.0
+
+  batch_size: 2
+  num_workers: 0
+  pin_memory: true
+
+vocoder:
+  backend: "speechbrain_hifigan"
+  source: "speechbrain/tts-hifigan-libritts-22050Hz"
+  cache_dir: "pretrained_models"
+  fallback_to_griffin_lim: false
+
+model:
+  content_encoder:
+    model_name: "microsoft/wavlm-base"
+    hidden_size: 768
+    output_dim: 256
+
+  timbre_encoder:
+    input_dim: 80
+    hidden_dim: 256
+    output_dim: 256
+    num_layers: 4
+
+  conformer:
+    input_dim: 256
+    num_heads: 8
+    num_layers: 6
+    conv_kernel_size: 31
+    dropout: 0.1
+
+  mel_decoder:
+    input_dim: 512
+    hidden_dim: 512
+    output_dim: 80
+    num_layers: 4
+
+  discriminator:
+    input_dim: 80
+    hidden_dim: 512
+    num_layers: 4
+    patch_size: 16
+
+training:
+  learning_rate: 1e-4
+  learning_rate_d: 2e-5
+  beta1: 0.5
+  beta2: 0.999
+  weight_decay: 1e-6
+
+  lambda_adv: 1.0
+  lambda_rec: 1.0
+  lambda_timbre: 0.5
+  lambda_pitch: 1.0
+  lambda_asr: 0.5
+  gan_mode: "hinge"
+
+  num_epochs: 30
+  steps_per_epoch: 7000
+  validation_steps: 200
+  save_interval: 1
+  log_interval: 25
+  enable_cycle_consistency: true
+
+  lr_scheduler: "cosine"
+  warmup_steps: 1000
+  gradient_clip_norm: 1.0
+  amp: true
+
+paths:
+  checkpoint_dir: "checkpoints"
+  log_dir: "logs"
+  eval_dir: "evaluation"
+  pretrained_dir: "pretrained_models"

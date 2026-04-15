@@ -4,13 +4,16 @@ Utilities for data loading and processing.
 import io
 import torch
 import torchaudio
-from torch.utils.data import Dataset, DataLoader
+from torch.utils.data import Dataset, DataLoader, IterableDataset
 from typing import Dict, List, Tuple, Optional
 import os
 import random
-from datasets import Audio, load_dataset
+from datasets import Audio, interleave_datasets, load_dataset
 import soundfile as sf
 import yaml
+
+
+_EVAL_SPLITS = {'validation', 'val', 'dev', 'test'}
 
 
 def _normalize_config_values(value):
@@ -33,6 +36,178 @@ def _normalize_config_values(value):
     return value
 
 
+class StreamingMulliVCIterableDataset(IterableDataset):
+    """Stateful iterable dataset used for full streaming training runs."""
+
+    dataset_mode = 'streaming-iterable'
+
+    def __init__(
+        self,
+        config: dict,
+        split: str = "train",
+        max_samples: Optional[int] = None
+    ):
+        self.config = config
+        self.data_config = config['data']
+        self.split = split
+        self.max_samples = max_samples
+        self.sample_rate = self.data_config['sample_rate']
+        self.fongbe_configs = self.data_config.get('fongbe_configs', ['female', 'male'])
+        self._consumed_samples = 0
+
+    def _split_name(
+        self,
+        train_key: str,
+        eval_key: str,
+        default_train: str,
+        default_eval: str
+    ) -> str:
+        """Maps repository split names onto dataset split names."""
+        if self.split in _EVAL_SPLITS:
+            return self.data_config.get(eval_key, default_eval)
+        return self.data_config.get(train_key, default_train)
+
+    def _default_max_samples(self) -> Optional[int]:
+        """Returns the default split-specific cap, if any."""
+        if self.split in _EVAL_SPLITS:
+            return self.data_config.get('max_validation_samples', 256)
+        return self.data_config.get('max_train_samples')
+
+    def _decode_audio(self, audio_info: Dict, sample_rate: int) -> torch.Tensor:
+        """Decodes dataset audio payloads without requiring torchcodec."""
+        if 'array' in audio_info:
+            audio_tensor = torch.from_numpy(audio_info['array']).float()
+            audio_sr = audio_info.get('sampling_rate', sample_rate)
+        else:
+            audio_bytes = audio_info.get('bytes')
+            audio_path = audio_info.get('path')
+
+            if audio_bytes is not None:
+                audio_array, audio_sr = sf.read(io.BytesIO(audio_bytes), always_2d=False)
+            elif audio_path is not None:
+                audio_array, audio_sr = sf.read(audio_path, always_2d=False)
+            else:
+                raise ValueError('No decodable audio content found in the sample.')
+
+            audio_tensor = torch.from_numpy(audio_array).float()
+
+        if audio_tensor.dim() > 1:
+            audio_tensor = audio_tensor.mean(dim=-1)
+
+        if audio_sr != sample_rate:
+            audio_tensor = torchaudio.functional.resample(
+                audio_tensor.unsqueeze(0),
+                audio_sr,
+                sample_rate
+            ).squeeze(0)
+
+        return audio_tensor
+
+    def _source_specs(self) -> List[Dict]:
+        """Builds the source specification list for the active split."""
+        source_specs = [
+            {
+                'repo_name': 'mythicinfinity/libritts',
+                'config_name': self.data_config.get('libritts_config', 'clean'),
+                'split_name': self._split_name(
+                    'libritts_train_split',
+                    'libritts_validation_split',
+                    'train.clean.360',
+                    'dev.clean'
+                ),
+                'dataset_label': 'libritts',
+                'language': 'en',
+                'text_key': 'text_normalized',
+                'speaker_key': 'speaker_id'
+            }
+        ]
+
+        for config_name in self.fongbe_configs:
+            source_specs.append({
+                'repo_name': 'beethogedeon/fongbe-speech',
+                'config_name': config_name,
+                'split_name': self._split_name(
+                    'fongbe_train_split',
+                    'fongbe_validation_split',
+                    'train',
+                    'test'
+                ),
+                'dataset_label': 'fongbe',
+                'language': 'fongbe',
+                'text_key': 'text',
+                'speaker_key': 'speaker_id'
+            })
+
+        return source_specs
+
+    def _build_stream(self):
+        """Builds one combined streaming iterator over all configured sources."""
+        streams = []
+        for spec in self._source_specs():
+            try:
+                dataset = load_dataset(
+                    spec['repo_name'],
+                    spec['config_name'],
+                    split=spec['split_name'],
+                    streaming=True
+                )
+                dataset = dataset.cast_column('audio', Audio(decode=False))
+                dataset = dataset.map(
+                    lambda sample,
+                    text_key=spec['text_key'],
+                    speaker_key=spec['speaker_key'],
+                    language=spec['language'],
+                    dataset_label=spec['dataset_label']: {
+                        'audio': sample['audio'],
+                        'text': sample[text_key],
+                        'speaker_id': str(sample[speaker_key]),
+                        'language': language,
+                        'dataset': dataset_label
+                    },
+                    remove_columns=dataset.column_names,
+                )
+                streams.append(dataset)
+            except Exception as exc:
+                print(
+                    f"Error loading {spec['repo_name']}"
+                    f"/{spec['config_name']} ({spec['split_name']}): {exc}"
+                )
+
+        if not streams:
+            return None
+
+        return interleave_datasets(streams, stopping_strategy='all_exhausted')
+
+    def __iter__(self):
+        """Yields normalized samples while preserving stream position across epochs."""
+        stream = self._build_stream()
+        if stream is None:
+            return
+
+        if self.split not in _EVAL_SPLITS and self._consumed_samples:
+            stream = stream.skip(self._consumed_samples)
+
+        sample_limit = self.max_samples if self.max_samples is not None else self._default_max_samples()
+        if sample_limit is not None:
+            stream = stream.take(int(sample_limit))
+
+        yielded = 0
+        for sample in stream:
+            audio_tensor = self._decode_audio(sample['audio'], self.sample_rate)
+            audio_tensor = audio_tensor / (torch.abs(audio_tensor).max() + 1e-8)
+            yielded += 1
+            yield {
+                'audio': audio_tensor,
+                'text': sample['text'],
+                'speaker_id': sample['speaker_id'],
+                'language': sample['language'],
+                'dataset': sample['dataset']
+            }
+
+        if self.split not in _EVAL_SPLITS:
+            self._consumed_samples += yielded
+
+
 class MulliVCDataset(Dataset):
     """Dataset for MulliVC with multilingual support."""
     
@@ -49,6 +224,7 @@ class MulliVCDataset(Dataset):
         self.sample_rate = self.data_config['sample_rate']
         self.use_streaming = self.data_config.get('use_streaming', True)
         self.fongbe_configs = self.data_config.get('fongbe_configs', ['female', 'male'])
+        self.dataset_mode = 'streaming-materialized' if self.use_streaming else 'indexed-materialized'
 
         self.sources = self._load_sources()
         self.samples = self._build_samples()
@@ -352,6 +528,7 @@ def create_dataloader(
 ) -> DataLoader:
     """Creates a DataLoader for MulliVC."""
     data_config = config['data']
+    use_streaming = data_config.get('use_streaming', True)
 
     if max_samples is None:
         if split in {'validation', 'val', 'dev'}:
@@ -361,15 +538,23 @@ def create_dataloader(
         else:
             max_samples = data_config.get('max_train_samples')
 
-    dataset = MulliVCDataset(config, split=split, max_samples=max_samples)
-    if len(dataset) == 0:
-        raise RuntimeError(f"No samples were loaded for split '{split}'.")
+    full_streaming_train = use_streaming and split == 'train' and max_samples is None
+
+    if full_streaming_train:
+        dataset = StreamingMulliVCIterableDataset(config, split=split, max_samples=max_samples)
+    else:
+        dataset = MulliVCDataset(config, split=split, max_samples=max_samples)
+        if len(dataset) == 0:
+            raise RuntimeError(f"No samples were loaded for split '{split}'.")
 
     batch_size = batch_size or data_config['batch_size']
     if shuffle is None:
-        shuffle = split == 'train'
+        shuffle = split == 'train' and not full_streaming_train
     if num_workers is None:
         num_workers = data_config.get('num_workers', 0)
+
+    if full_streaming_train:
+        num_workers = 0
     
     return DataLoader(
         dataset,

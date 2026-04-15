@@ -415,7 +415,10 @@ class CombinedLoss(nn.Module):
         self.timbre_loss = TimbreLoss()
         self.pitch_loss = PitchLoss()
         self.asr_loss = ASRLoss(asr_model=asr_model, weight=self.lambda_asr)
-        self.adversarial_loss = AdversarialLoss(weight=self.lambda_adv)
+        self.adversarial_loss = AdversarialLoss(
+            gan_mode=config['training'].get('gan_mode', 'hinge'),
+            weight=self.lambda_adv,
+        )
         self.cycle_loss = CycleConsistencyLoss()
         
         # Perceptual loss if available

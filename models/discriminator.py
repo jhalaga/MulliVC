@@ -65,7 +65,8 @@ class PatchGANDiscriminator(nn.Module):
                 )
             )
         
-        # Final layer
+        # Final layer — raw logits (no Sigmoid), compatible with
+        # LSGAN, hinge, and WGAN-GP adversarial losses.
         self.conv_layers.append(
             nn.Sequential(
                 nn.Conv2d(
@@ -75,7 +76,6 @@ class PatchGANDiscriminator(nn.Module):
                     stride=1,
                     padding=1
                 ),
-                nn.Sigmoid()
             )
         )
         

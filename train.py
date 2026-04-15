@@ -1,15 +1,19 @@
 """
 Training script for MulliVC.
 """
+import json
+from pathlib import Path
 import torch
 import torch.nn as nn
 import torch.optim as optim
+from torch.amp import autocast, GradScaler
 from torch.utils.data import DataLoader
 import yaml
 import os
 import wandb
 from tqdm import tqdm
 import argparse
+from datetime import datetime, timezone
 from typing import Dict, Any, Optional
 
 from models.mullivc import MulliVC, create_mullivc_model
@@ -30,6 +34,8 @@ class MulliVCTrainer:
         self.model = create_mullivc_model(config_path).to(self.device)
         
         # Initialize optimizers
+        lr_g = self.config['training']['learning_rate']
+        lr_d = self.config['training'].get('learning_rate_d', lr_g)
         self.optimizer_g = optim.Adam(
             [
                 {'params': self.model.content_encoder.parameters()},
@@ -37,14 +43,14 @@ class MulliVCTrainer:
                 {'params': self.model.fine_grained_conformer.parameters()},
                 {'params': self.model.mel_decoder.parameters()}
             ],
-            lr=self.config['training']['learning_rate'],
+            lr=lr_g,
             betas=(self.config['training']['beta1'], self.config['training']['beta2']),
             weight_decay=self.config['training']['weight_decay']
         )
         
         self.optimizer_d = optim.Adam(
             self.model.discriminator.parameters(),
-            lr=self.config['training']['learning_rate'],
+            lr=lr_d,
             betas=(self.config['training']['beta1'], self.config['training']['beta2']),
             weight_decay=self.config['training']['weight_decay']
         )
@@ -59,9 +65,32 @@ class MulliVCTrainer:
             self.optimizer_d,
             T_max=self.config['training']['num_epochs']
         )
+
+        # AMP (mixed precision) support
+        self.use_amp = self.config['training'].get('amp', False)
+        self.scaler_g = GradScaler(enabled=self.use_amp)
+        self.scaler_d = GradScaler(enabled=self.use_amp)
+        self.grad_clip_norm = self.config['training'].get('gradient_clip_norm', 0.0)
         
         # Audio processor
         self.audio_processor = AudioProcessor(self.config)
+
+        self.log_dir = Path(self.config['paths']['log_dir'])
+        self.log_dir.mkdir(parents=True, exist_ok=True)
+        self.metrics_path = self.log_dir / 'metrics.jsonl'
+        self.progress_path = self.log_dir / 'progress.json'
+        self.best_val_loss = float('inf')
+        self.best_epoch = None
+        self.progress_state: Dict[str, Any] = {}
+        self._write_progress(
+            status='initializing',
+            device=str(self.device),
+            config_path=config_path,
+            steps_per_epoch=self.config['training'].get('steps_per_epoch'),
+            validation_steps=self.config['training'].get('validation_steps'),
+            num_epochs=self.config['training'].get('num_epochs'),
+            batch_size=self.config['data'].get('batch_size'),
+        )
         
         # Initialize wandb
         if self.config.get('wandb', {}).get('enabled', False):
@@ -96,9 +125,50 @@ class MulliVCTrainer:
             wandb_config = self.config.setdefault('wandb', {})
             wandb_config['enabled'] = False
 
+    def _safe_len(self, dataloader: DataLoader) -> Optional[int]:
+        """Returns len(dataloader) when available."""
+        try:
+            return len(dataloader)
+        except TypeError:
+            return None
+
+    def _losses_to_scalars(self, losses: Dict[str, Any]) -> Dict[str, float]:
+        """Converts tensors in a loss dictionary into Python floats."""
+        scalars = {}
+        for key, value in losses.items():
+            if isinstance(value, torch.Tensor):
+                scalars[key] = float(value.detach().item())
+            else:
+                scalars[key] = float(value)
+        return scalars
+
+    def _append_metrics(self, record: Dict[str, Any]):
+        """Appends one structured metrics record to disk."""
+        payload = dict(record)
+        payload['timestamp'] = datetime.now(timezone.utc).isoformat()
+        with self.metrics_path.open('a', encoding='utf-8') as handle:
+            handle.write(json.dumps(payload, sort_keys=True) + '\n')
+
+    def _write_progress(self, **updates: Any):
+        """Writes the latest training progress snapshot to disk."""
+        self.progress_state.update(updates)
+        self.progress_state['updated_at'] = datetime.now(timezone.utc).isoformat()
+        self.progress_state['best_val_loss'] = (
+            None if self.best_val_loss == float('inf') else float(self.best_val_loss)
+        )
+        self.progress_state['best_epoch'] = self.best_epoch
+        with self.progress_path.open('w', encoding='utf-8') as handle:
+            json.dump(self.progress_state, handle, indent=2, sort_keys=True)
+
     def _bounded_num_batches(self, dataloader: DataLoader, limit: Optional[int]) -> int:
         """Returns the effective number of batches for this pass."""
-        num_batches = len(dataloader)
+        try:
+            num_batches = len(dataloader)
+        except TypeError:
+            if limit is None:
+                raise RuntimeError('Iterable dataloader requires an explicit batch limit.')
+            return int(limit)
+
         if limit is not None:
             num_batches = min(num_batches, int(limit))
         return num_batches
@@ -123,6 +193,14 @@ class MulliVCTrainer:
         if num_batches == 0:
             raise RuntimeError('No batches available for training.')
 
+        self._write_progress(
+            status='training',
+            phase='train',
+            current_epoch=epoch,
+            current_batch=0,
+            epoch_batches=num_batches,
+        )
+
         with tqdm(total=num_batches, desc=f'Epoch {epoch}') as pbar:
             for batch_idx, batch in enumerate(dataloader):
                 if batch_idx >= num_batches:
@@ -132,37 +210,82 @@ class MulliVCTrainer:
                 batch = {k: v.to(self.device) if isinstance(v, torch.Tensor) else v 
                         for k, v in batch.items()}
                 
-                # Train the generator
+                # Train the generator -- stage-by-stage backward to reduce
+                # peak GPU memory (all 3 stages kept the full graph alive).
                 self.optimizer_g.zero_grad()
-                losses_g = self.model.training_step(batch, batch_idx)
-                loss_g = losses_g['total']
-                loss_g.backward()
-                self.optimizer_g.step()
+                stage_funcs = [
+                    self.model._training_step_1,
+                    self.model._training_step_2,
+                ]
+                if self.model.enable_cycle_consistency:
+                    stage_funcs.append(self.model._training_step_3)
+                num_stages = len(stage_funcs)
+
+                accumulated_losses_g: Dict[str, float] = {}
+                for stage_fn in stage_funcs:
+                    with autocast('cuda', enabled=self.use_amp):
+                        stage_losses = stage_fn(batch)
+                    self.scaler_g.scale(stage_losses['total'] / num_stages).backward()
+                    for k, v in stage_losses.items():
+                        accumulated_losses_g[k] = accumulated_losses_g.get(k, 0.0) + v.item() / num_stages
+                    del stage_losses
+                    torch.cuda.empty_cache()
+
+                if self.grad_clip_norm > 0:
+                    self.scaler_g.unscale_(self.optimizer_g)
+                    torch.nn.utils.clip_grad_norm_(
+                        [p for group in self.optimizer_g.param_groups for p in group['params']],
+                        self.grad_clip_norm,
+                    )
+                self.scaler_g.step(self.optimizer_g)
+                self.scaler_g.update()
+                
+                # Build a "losses_g" dict with plain floats for logging
+                losses_g = accumulated_losses_g
                 
                 # Train the discriminator
                 self.optimizer_d.zero_grad()
-                losses_d = self._train_discriminator(batch)
-                loss_d = losses_d['total']
-                loss_d.backward()
-                self.optimizer_d.step()
+                with autocast('cuda', enabled=self.use_amp):
+                    losses_d = self._train_discriminator(batch)
+                self.scaler_d.scale(losses_d['total']).backward()
+                if self.grad_clip_norm > 0:
+                    self.scaler_d.unscale_(self.optimizer_d)
+                    torch.nn.utils.clip_grad_norm_(
+                        self.model.discriminator.parameters(),
+                        self.grad_clip_norm,
+                    )
+                self.scaler_d.step(self.optimizer_d)
+                self.scaler_d.update()
                 
-                # Update total losses
+                # Free discriminator graph
+                torch.cuda.empty_cache()
+                
+                # Update total losses (losses_g values are already floats)
                 for key in total_losses:
                     if key in losses_g:
-                        total_losses[key] += losses_g[key].item()
+                        total_losses[key] += losses_g[key]
                     if key in losses_d:
                         total_losses[key] += losses_d[key].item()
                 
                 # Update the progress bar
                 pbar.set_postfix({
-                    'G_Loss': f'{loss_g.item():.4f}',
-                    'D_Loss': f'{loss_d.item():.4f}'
+                    'G_Loss': f'{losses_g["total"]:.4f}',
+                    'D_Loss': f'{losses_d["total"].item():.4f}'
                 })
                 pbar.update(1)
                 
                 # Logging
                 if batch_idx % self.config['training']['log_interval'] == 0:
                     self._log_metrics(epoch, batch_idx, losses_g, losses_d)
+                    self._write_progress(
+                        status='training',
+                        phase='train',
+                        current_epoch=epoch,
+                        current_batch=batch_idx + 1,
+                        epoch_batches=num_batches,
+                        latest_generator_losses=self._losses_to_scalars(losses_g),
+                        latest_discriminator_losses=self._losses_to_scalars(losses_d),
+                    )
         
         # Average losses
         for key in total_losses:
@@ -171,17 +294,18 @@ class MulliVCTrainer:
         return total_losses
     
     def _train_discriminator(self, batch: Dict[str, torch.Tensor]) -> Dict[str, torch.Tensor]:
-        """Trains the discriminator."""
+        """Trains the discriminator on both self-recon and cross-speaker fakes."""
         source_audio = batch['audio']
-        target_audio = batch['audio']  # Same audio for discriminator training
-        
-        # Forward pass
+
+        # Generate fake mels from cross-speaker conversion (stage 2 scenario),
+        # which is what the discriminator actually needs to reject.
+        target_timbre_audio = torch.roll(source_audio, 1, dims=0)
         with torch.no_grad():
-            outputs = self.model.forward(source_audio, target_audio)
+            outputs = self.model.forward(source_audio, target_timbre_audio)
             generated_mel = outputs['generated_mel']
         
-        # Real samples
-        real_mel = self.audio_processor.audio_to_mel(target_audio)
+        # Real samples (target speaker's mel is what the output should match)
+        real_mel = self.audio_processor.audio_to_mel(target_timbre_audio)
         real_disc_output, _ = self.model.discriminator(real_mel)
         
         # Fake samples
@@ -200,19 +324,30 @@ class MulliVCTrainer:
     
     def _log_metrics(self, epoch: int, batch_idx: int, losses_g: Dict, losses_d: Dict):
         """Logs metrics."""
+        generator_metrics = self._losses_to_scalars(losses_g)
+        discriminator_metrics = self._losses_to_scalars(losses_d)
+
         if self.config.get('wandb', {}).get('enabled', False):
             metrics = {
                 'epoch': epoch,
                 'batch': batch_idx,
-                'generator/total_loss': losses_g['total'].item(),
-                'generator/reconstruction_loss': losses_g['reconstruction'].item(),
-                'generator/timbre_loss': losses_g['timbre'].item(),
-                'generator/pitch_loss': losses_g['pitch'].item(),
-                'generator/asr_loss': losses_g['asr'].item(),
-                'discriminator/total_loss': losses_d['total'].item(),
-                'discriminator/adversarial_loss': losses_d['adversarial'].item()
+                'generator/total_loss': generator_metrics['total'],
+                'generator/reconstruction_loss': generator_metrics['reconstruction'],
+                'generator/timbre_loss': generator_metrics['timbre'],
+                'generator/pitch_loss': generator_metrics['pitch'],
+                'generator/asr_loss': generator_metrics['asr'],
+                'discriminator/total_loss': discriminator_metrics['total'],
+                'discriminator/adversarial_loss': discriminator_metrics['adversarial']
             }
             wandb.log(metrics)
+
+        self._append_metrics({
+            'kind': 'train_step',
+            'epoch': epoch,
+            'batch': batch_idx,
+            'generator': generator_metrics,
+            'discriminator': discriminator_metrics,
+        })
     
     def validate(self, dataloader: DataLoader, epoch: int) -> Dict[str, float]:
         """Validates the model."""
@@ -233,6 +368,14 @@ class MulliVCTrainer:
         )
         if num_batches == 0:
             raise RuntimeError('No batches available for validation.')
+
+        self._write_progress(
+            status='validating',
+            phase='validation',
+            current_epoch=epoch,
+            current_batch=0,
+            epoch_batches=num_batches,
+        )
         
         with torch.no_grad():
             for batch_idx, batch in enumerate(tqdm(dataloader, total=num_batches, desc='Validation')):
@@ -243,7 +386,8 @@ class MulliVCTrainer:
                         for k, v in batch.items()}
                 
                 # Forward pass
-                outputs = self.model.forward(batch['audio'], batch['audio'])
+                with autocast('cuda', enabled=self.use_amp):
+                    outputs = self.model.forward(batch['audio'], batch['audio'])
                 
                 # Targets
                 targets = {
@@ -258,6 +402,15 @@ class MulliVCTrainer:
                 for key in total_losses:
                     if key in losses:
                         total_losses[key] += losses[key].item()
+
+                if batch_idx == 0 or (batch_idx + 1) % 10 == 0 or (batch_idx + 1) == num_batches:
+                    self._write_progress(
+                        status='validating',
+                        phase='validation',
+                        current_epoch=epoch,
+                        current_batch=batch_idx + 1,
+                        epoch_batches=num_batches,
+                    )
         
         # Average losses
         for key in total_losses:
@@ -279,60 +432,108 @@ class MulliVCTrainer:
     
     def train(self):
         """Main training loop."""
-        # Create dataloaders
-        train_dataloader = create_dataloader(self.config, split='train')
-        val_dataloader = create_dataloader(self.config, split='validation', shuffle=False)
+        try:
+            train_dataloader = create_dataloader(self.config, split='train')
+            val_dataloader = create_dataloader(self.config, split='validation', shuffle=False)
 
-        print(
-            f"Device: {self.device} | batch_size={self.config['data']['batch_size']} | "
-            f"max_train_samples={self.config['data'].get('max_train_samples')} | "
-            f"max_validation_samples={self.config['data'].get('max_validation_samples')} | "
-            f"steps_per_epoch={self.config['training'].get('steps_per_epoch')} | "
-            f"validation_steps={self.config['training'].get('validation_steps')}"
-        )
-        
-        best_val_loss = float('inf')
-        
-        for epoch in range(self.config['training']['num_epochs']):
-            # Training
-            train_losses = self.train_epoch(train_dataloader, epoch)
-            
-            # Validation
-            val_losses = self.validate(val_dataloader, epoch)
-            
-            # Update schedulers
-            self.scheduler_g.step()
-            self.scheduler_d.step()
-            
-            # Logging
-            print(f'Epoch {epoch}:')
-            print(f'  Train Loss: {train_losses["total"]:.4f}')
-            print(f'  Val Loss: {val_losses["total"]:.4f}')
-            
-            if self.config.get('wandb', {}).get('enabled', False):
-                wandb.log({
+            train_batches = self._safe_len(train_dataloader)
+            val_batches = self._safe_len(val_dataloader)
+            train_mode = getattr(train_dataloader.dataset, 'dataset_mode', train_dataloader.dataset.__class__.__name__)
+            val_mode = getattr(val_dataloader.dataset, 'dataset_mode', val_dataloader.dataset.__class__.__name__)
+
+            print(
+                f"Device: {self.device} | batch_size={self.config['data']['batch_size']} | "
+                f"max_train_samples={self.config['data'].get('max_train_samples')} | "
+                f"max_validation_samples={self.config['data'].get('max_validation_samples')} | "
+                f"steps_per_epoch={self.config['training'].get('steps_per_epoch')} | "
+                f"validation_steps={self.config['training'].get('validation_steps')}"
+            )
+            print(
+                f"Train dataset: mode={train_mode} batches={train_batches if train_batches is not None else 'streaming'} | "
+                f"Validation dataset: mode={val_mode} batches={val_batches if val_batches is not None else 'streaming'}"
+            )
+
+            self._write_progress(
+                status='ready',
+                phase='setup-complete',
+                current_epoch=None,
+                current_batch=None,
+                train_dataset_mode=train_mode,
+                validation_dataset_mode=val_mode,
+                train_batches=train_batches,
+                validation_batches=val_batches,
+            )
+
+            for epoch in range(self.config['training']['num_epochs']):
+                train_losses = self.train_epoch(train_dataloader, epoch)
+                val_losses = self.validate(val_dataloader, epoch)
+
+                self.scheduler_g.step()
+                self.scheduler_d.step()
+
+                print(f'Epoch {epoch}:')
+                print(f'  Train Loss: {train_losses["total"]:.4f}')
+                print(f'  Val Loss: {val_losses["total"]:.4f}')
+
+                if self.config.get('wandb', {}).get('enabled', False):
+                    wandb.log({
+                        'epoch': epoch,
+                        'train/total_loss': train_losses['total'],
+                        'train/reconstruction_loss': train_losses['reconstruction'],
+                        'train/timbre_loss': train_losses['timbre'],
+                        'train/pitch_loss': train_losses['pitch'],
+                        'train/asr_loss': train_losses['asr'],
+                        'val/total_loss': val_losses['total'],
+                        'val/reconstruction_loss': val_losses['reconstruction'],
+                        'val/timbre_loss': val_losses['timbre'],
+                        'val/pitch_loss': val_losses['pitch'],
+                        'val/asr_loss': val_losses['asr']
+                    })
+
+                is_best = val_losses['total'] < self.best_val_loss
+                if is_best:
+                    self.best_val_loss = val_losses['total']
+                    self.best_epoch = epoch
+
+                if epoch % self.config['training']['save_interval'] == 0:
+                    self.save_checkpoint(epoch, 0, is_best)
+
+                self._append_metrics({
+                    'kind': 'epoch_summary',
                     'epoch': epoch,
-                    'train/total_loss': train_losses['total'],
-                    'train/reconstruction_loss': train_losses['reconstruction'],
-                    'train/timbre_loss': train_losses['timbre'],
-                    'train/pitch_loss': train_losses['pitch'],
-                    'train/asr_loss': train_losses['asr'],
-                    'val/total_loss': val_losses['total'],
-                    'val/reconstruction_loss': val_losses['reconstruction'],
-                    'val/timbre_loss': val_losses['timbre'],
-                    'val/pitch_loss': val_losses['pitch'],
-                    'val/asr_loss': val_losses['asr']
+                    'train': train_losses,
+                    'validation': val_losses,
+                    'is_best': is_best,
+                    'best_val_loss': self.best_val_loss,
+                    'learning_rate_g': float(self.optimizer_g.param_groups[0]['lr']),
+                    'learning_rate_d': float(self.optimizer_d.param_groups[0]['lr']),
                 })
-            
-            # Save the checkpoint
-            is_best = val_losses['total'] < best_val_loss
-            if is_best:
-                best_val_loss = val_losses['total']
-            
-            if epoch % self.config['training']['save_interval'] == 0:
-                self.save_checkpoint(epoch, 0, is_best)
-        
-        print('Training completed!')
+                self._write_progress(
+                    status='epoch-complete',
+                    phase='epoch-complete',
+                    current_epoch=epoch,
+                    current_batch=None,
+                    completed_epochs=epoch + 1,
+                    last_train_losses=train_losses,
+                    last_validation_losses=val_losses,
+                    latest_checkpoint=str(Path(self.config['paths']['checkpoint_dir']) / f'checkpoint_epoch_{epoch}_step_0.pt'),
+                )
+
+            self._write_progress(
+                status='completed',
+                phase='done',
+                current_epoch=self.config['training']['num_epochs'] - 1,
+                current_batch=None,
+                completed_epochs=self.config['training']['num_epochs'],
+            )
+            print('Training completed!')
+        except Exception as exc:
+            self._write_progress(
+                status='failed',
+                phase='error',
+                error=str(exc),
+            )
+            raise
 
 
 def main():

@@ -42,7 +42,7 @@ FORWARDED_ENV = {
 
 
 @Endpoint(
-    name="mullivc-smoke-train-v7",
+    name="mullivc-smoke-train-v11",
     gpu=GpuGroup.ADA_48_PRO,
     workers=(0, 1),
     idle_timeout=900,
@@ -75,6 +75,56 @@ async def run_mullivc_smoke_train(request: dict | None = None) -> dict:
             capture_output=True,
             text=True,
         )
+
+    # FIX 1: Install torch + torchaudio built for CUDA 12.4 so they support
+    # the current GPU (e.g. L40S sm_89) AND the worker's NVIDIA driver.
+    # The Flash base image's torch lacks sm_89; a blanket --upgrade pulls
+    # a cu129 build whose driver requirement exceeds the image driver (12.8).
+    # Pinning cu124 ensures compatibility with the driver while adding sm_89.
+    _torch_marker = Path("/tmp/.torch_upgraded")
+    if not _torch_marker.exists():
+        subprocess.run(
+            [sys.executable, "-m", "pip", "install",
+             "torch", "torchaudio",
+             "--index-url", "https://download.pytorch.org/whl/cu124",
+             "--quiet"],
+            check=True,
+            capture_output=True,
+            text=True,
+            timeout=600,
+        )
+        _torch_marker.touch()
+
+    # FIX 1b: Patch the cloned repo's GPU detection to use the actual CUDA
+    # allocation test instead of the strict arch-list check.  sm_89 (Ada)
+    # works via PTX forward-compat even on sm_80-compiled torch builds.
+    _model_utils = _clone_dir / "utils" / "model_utils.py"
+    _mu_text = _model_utils.read_text()
+    if "current_arch not in supported_arches" in _mu_text:
+        _mu_text = _mu_text.replace(
+            """        try:
+            capability = torch.cuda.get_device_capability(0)
+            current_arch = f"sm_{capability[0]}{capability[1]}"
+            supported_arches = {
+                arch for arch in torch.cuda.get_arch_list()
+                if arch.startswith('sm_')
+            }
+
+            if supported_arches and current_arch not in supported_arches:
+                device_name = torch.cuda.get_device_name(0)
+                print(
+                    f"GPU {device_name} ({current_arch}) is unsupported by the installed PyTorch build; using CPU instead."
+                )
+                return torch.device('cpu')
+
+            torch.empty(1, device='cuda')
+            return torch.device('cuda')""",
+            """        try:
+            torch.empty(1, device='cuda')
+            return torch.device('cuda')""",
+        )
+        _model_utils.write_text(_mu_text)
+
     project_root = _clone_dir
     config_path = project_root / request.get("config", "configs/mullivc_runpod.yaml")
     if not config_path.exists():
@@ -100,6 +150,12 @@ async def run_mullivc_smoke_train(request: dict | None = None) -> dict:
     paths["log_dir"] = str(log_dir)
     paths["eval_dir"] = str(eval_dir)
     paths["pretrained_dir"] = str(pretrained_dir)
+
+    # FIX 2: Use streaming mode to avoid downloading the full dataset.
+    # Non-streaming mode fails on workers that lack disk space or have
+    # transient network issues while extracting multi-GB archives.
+    data_config = config.setdefault("data", {})
+    data_config["use_streaming"] = True
 
     flash_config_path = output_root / "flash_config.yaml"
     with flash_config_path.open("w") as file_handle:
@@ -206,8 +262,98 @@ def _build_payload(args: argparse.Namespace) -> dict:
 
 
 async def _main_async(args: argparse.Namespace):
-    result = await run_mullivc_smoke_train(_build_payload(args))
-    print(json.dumps(result, indent=2))
+    # FIX 3: Bypass the Flash SDK's built-in polling/log-streaming loop
+    # which hangs for 10+ minutes.  We replicate only deployment +
+    # submission, then poll the public REST API ourselves.
+    import base64
+    import time
+
+    import cloudpickle
+    import requests as req
+    from runpod_flash.core.credentials import get_api_key
+    from runpod_flash.core.resources import ResourceManager
+    from runpod_flash.stubs.live_serverless import LiveServerlessStub
+
+    # --- Step 1: deploy / reuse the endpoint ---
+    # __remote_config__ is set by the @Endpoint / remote() decorator.
+    remote_cfg = run_mullivc_smoke_train.__remote_config__
+    resource_config = remote_cfg["resource_config"]
+    dependencies = remote_cfg.get("dependencies")
+    system_deps = remote_cfg.get("system_dependencies")
+
+    print("[flash] Deploying / reusing endpoint …")
+    resource_manager = ResourceManager()
+    server = await resource_manager.get_or_deploy_resource(resource_config)
+    endpoint_id = server.id
+    if not endpoint_id:
+        raise RuntimeError("Endpoint was not deployed (no id)")
+    print(f"[flash] Endpoint ready: {endpoint_id}")
+
+    # --- Step 2: serialise the worker function + payload ---
+    print("[flash] Serialising function …")
+    stub = LiveServerlessStub(server)
+    original_func = run_mullivc_smoke_train.__wrapped__
+    payload = _build_payload(args)
+    request_obj = await stub.prepare_request(
+        original_func,
+        dependencies,
+        system_deps,
+        True,            # accelerate_downloads (Endpoint default)
+        payload,         # positional arg forwarded to the worker function
+    )
+    raw_payload = request_obj.model_dump(exclude_none=True)
+
+    # --- Step 3: submit the job (quick – no polling) ---
+    # server.endpoint is a runpod.Endpoint; its .run() returns a Job
+    # object immediately after the POST to /run.
+    job = await asyncio.to_thread(server.endpoint.run, request_input=raw_payload)
+    job_id = job.job_id
+    print(f"[flash] Job submitted: {job_id}")
+
+    # --- Step 4: poll via REST API with clear progress messages ---
+    api_key = get_api_key()
+    headers = {"Authorization": f"Bearer {api_key}"}
+    status_url = f"https://api.runpod.ai/v2/{endpoint_id}/status/{job_id}"
+
+    poll_interval = 10
+    start = time.time()
+    last_status = None
+    while True:
+        await asyncio.sleep(poll_interval)
+        elapsed = time.time() - start
+        try:
+            resp = req.get(status_url, headers=headers, timeout=30)
+            resp.raise_for_status()
+            data = resp.json()
+        except Exception as exc:
+            print(f"[flash] [{elapsed:.0f}s] Poll error (will retry): {exc}")
+            continue
+
+        status = data.get("status", "UNKNOWN")
+        if status != last_status:
+            print(f"[flash] [{elapsed:.0f}s] Status: {status}")
+            last_status = status
+        elif int(elapsed) % 60 < poll_interval:
+            # periodic heartbeat so the user knows we're still alive
+            print(f"[flash] [{elapsed:.0f}s] Still {status} …")
+
+        if status in ("COMPLETED", "FAILED", "CANCELLED", "TIMED_OUT"):
+            break
+
+    # --- Step 5: decode the result ---
+    output = data.get("output", {})
+    if status == "COMPLETED" and isinstance(output, dict) and output.get("result"):
+        result = cloudpickle.loads(base64.b64decode(output["result"]))
+    elif isinstance(output, dict) and output.get("json_result"):
+        result = output["json_result"]
+    else:
+        result = {
+            "ok": False,
+            "status": status,
+            "error": data.get("error") or str(output),
+        }
+
+    print(json.dumps(result, indent=2, default=str))
 
 
 def main():
