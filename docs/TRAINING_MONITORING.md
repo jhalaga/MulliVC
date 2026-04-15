@@ -302,6 +302,15 @@ tail -f /tmp/MulliVC/flash_runs/577788cf/logs/training.log
 # Look for the terminal running flash_full_train.py.
 ```
 
+Runpod worker terminal quick commands:
+
+```bash
+# Check progress.json for current epoch, batch, val loss, and checkpoint
+cat /tmp/MulliVC/flash_runs/01e1b82c/logs/progress.json
+
+# Check the latest metrics
+tail -20 /tmp/MulliVC/flash_runs/01e1b82c/logs/training.log
+
 ---
 
 ## Glossary
