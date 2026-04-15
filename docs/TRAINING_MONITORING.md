@@ -306,10 +306,10 @@ Runpod worker terminal quick commands:
 
 ```bash
 # Check progress.json for current epoch, batch, val loss, and checkpoint
-cat /tmp/MulliVC/flash_runs/01e1b82c/logs/progress.json
+cat /tmp/MulliVC/flash_runs/*/logs/progress.json
 
 # Check the latest metrics
-tail -20 /tmp/MulliVC/flash_runs/01e1b82c/logs/training.log
+tail -20 /tmp/MulliVC/flash_runs/*/logs/training.log
 
 ---
 
