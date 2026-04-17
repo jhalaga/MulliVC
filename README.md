@@ -187,7 +187,6 @@ python3 inference.py \
   --checkpoint checkpoints/checkpoint_epoch_12_step_0.pt \
   --source_audio data/test_samples/source.wav \
   --target_speaker_audio data/test_samples/target_speaker.wav \
-  --output data/test_samples/converted.wav \
   --cpu
 ```
 
