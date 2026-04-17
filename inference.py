@@ -14,6 +14,13 @@ from utils.data_utils import load_config
 from utils.model_utils import get_runtime_device
 
 
+def default_output_path(source_audio_path: str) -> str:
+    """Builds a default WAV output path next to the source audio."""
+    source_dir = os.path.dirname(source_audio_path)
+    source_name, _ = os.path.splitext(os.path.basename(source_audio_path))
+    return os.path.join(source_dir, f"{source_name}_converted.wav")
+
+
 class MulliVCInference:
     """Inference pipeline for MulliVC."""
     
@@ -228,8 +235,8 @@ def main():
                        help='Path to the source audio')
     parser.add_argument('--target_speaker_audio', type=str, required=True,
                        help='Path to the target speaker audio')
-    parser.add_argument('--output', type=str, required=True,
-                       help='Output path for the converted audio')
+    parser.add_argument('--output', type=str, default=None,
+                       help='Output path for the converted audio (defaults to a .wav next to source audio)')
     parser.add_argument('--source_language', type=str, default='en',
                        help='Source language')
     parser.add_argument('--target_language', type=str, default='fongbe',
@@ -240,6 +247,7 @@ def main():
                        help='Force CPU inference (useful when local GPU is unsupported)')
     
     args = parser.parse_args()
+    output_path = args.output or default_output_path(args.source_audio)
     
     # Create the inference pipeline
     inference = MulliVCInference(args.config, args.checkpoint, force_cpu=args.cpu)
@@ -249,7 +257,7 @@ def main():
         output_path = inference.cross_lingual_convert(
             args.source_audio,
             args.target_speaker_audio,
-            args.output,
+            output_path,
             args.source_language,
             args.target_language
         )
@@ -257,7 +265,7 @@ def main():
         output_path = inference.convert_voice(
             args.source_audio,
             args.target_speaker_audio,
-            args.output
+            output_path
         )
     
     print(f"Conversion completed: {output_path}")
