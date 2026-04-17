@@ -1,0 +1,51 @@
+{
+  "batch_size": 2,
+  "best_epoch": 5,
+  "best_val_loss": 5.966558401584625,
+  "completed_epochs": 6,
+  "config_path": "/tmp/MulliVC/flash_runs/01e1b82c/flash_config.yaml",
+  "current_batch": 5501,
+  "current_epoch": 6,
+  "device": "cuda",
+  "epoch_batches": 7000,
+  "last_train_losses": {
+    "adversarial": 2.126827822730656,
+    "asr": 0.0,
+    "pitch": 0.0,
+    "reconstruction": 3.7323758033627645,
+    "timbre": 0.020277597294676878,
+    "total": 5.879481223174522
+  },
+  "last_validation_losses": {
+    "adversarial": 1.4413232421875,
+    "asr": 0.0,
+    "pitch": 0.0,
+    "reconstruction": 4.507860649824142,
+    "timbre": 0.017374522984027863,
+    "total": 5.966558401584625
+  },
+  "latest_checkpoint": "/tmp/MulliVC/flash_runs/01e1b82c/checkpoints/checkpoint_epoch_5_step_0.pt",
+  "latest_discriminator_losses": {
+    "adversarial": 0.9658203125,
+    "total": 0.9658203125
+  },
+  "latest_generator_losses": {
+    "adversarial": 1.1647135416666667,
+    "asr": 0.0,
+    "perceptual": 0.0,
+    "pitch": 0.0,
+    "reconstruction": 2.6736392180124917,
+    "timbre": 0.007669384280840555,
+    "total": 3.8460222085316973
+  },
+  "num_epochs": 30,
+  "phase": "train",
+  "status": "training",
+  "steps_per_epoch": 7000,
+  "train_batches": null,
+  "train_dataset_mode": "streaming-iterable",
+  "updated_at": "2026-04-16T09:28:01.636824+00:00",
+  "validation_batches": 1024,
+  "validation_dataset_mode": "streaming-materialized",
+  "validation_steps": 200
+}

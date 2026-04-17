@@ -56,13 +56,13 @@ def _synced_repo_files() -> dict[str, str]:
 
 
 @Endpoint(
-    name="mullivc-full-train-v8",
+    name="mullivc-full-train-v9",
     gpu=GpuGroup.ADA_80_PRO,
     workers=(0, 1),
     idle_timeout=900,
     dependencies=TRAINING_REQUIREMENTS,
     env=FORWARDED_ENV,
-    execution_timeout_ms=86_400_000,
+    execution_timeout_ms=604_800_000,
 )
 async def run_mullivc_full_train(request: dict | None = None) -> dict:
     """Execute a production-oriented MulliVC training run on a Flash GPU worker."""
@@ -198,7 +198,17 @@ async def run_mullivc_full_train(request: dict | None = None) -> dict:
     if request.get("validation_steps") is not None:
         command.extend(["--validation-steps", str(request["validation_steps"])])
 
-    timeout_seconds = int(request.get("timeout_seconds", 82_800))
+    # Resume from a previous checkpoint if specified
+    resume_path = request.get("resume")
+    if resume_path:
+        resolved = project_root / resume_path if not Path(resume_path).is_absolute() else Path(resume_path)
+        if resolved.exists():
+            command.extend(["--resume", str(resolved)])
+            print(f"[launcher] Resuming from {resolved}")
+        else:
+            print(f"[launcher] WARNING: resume path not found: {resolved}")
+
+    timeout_seconds = int(request.get("timeout_seconds", 518_400))
     training_log_path = log_dir / "training.log"
     progress_path = log_dir / "progress.json"
     metrics_path = log_dir / "metrics.jsonl"
@@ -305,6 +315,8 @@ def _build_payload(args: argparse.Namespace) -> dict:
         payload["steps_per_epoch"] = args.steps_per_epoch
     if args.validation_steps is not None:
         payload["validation_steps"] = args.validation_steps
+    if args.resume is not None:
+        payload["resume"] = args.resume
     return payload
 
 
@@ -422,11 +434,12 @@ def main():
     parser.add_argument("--max-val-samples", type=int, default=None, help="Limit validation samples")
     parser.add_argument("--steps-per-epoch", type=int, default=None, help="Override steps per epoch")
     parser.add_argument("--validation-steps", type=int, default=None, help="Override validation steps")
+    parser.add_argument("--resume", default=None, help="Path to checkpoint to resume from (on worker)")
     parser.add_argument(
         "--timeout-seconds",
         type=int,
-        default=82_800,
-        help="Worker-side timeout (default: 23h)",
+        default=518_400,
+        help="Worker-side timeout (default: 6 days)",
     )
 
     args = parser.parse_args()

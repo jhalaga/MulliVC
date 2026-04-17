@@ -8,6 +8,7 @@ __pycache__
 
 /pretrained_models
 
+/data/test_samples/*
 /smoke_demo
 /smoke_inference
 /hifigan_demo

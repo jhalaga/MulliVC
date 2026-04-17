@@ -75,6 +75,9 @@ class MulliVCTrainer:
         # Audio processor
         self.audio_processor = AudioProcessor(self.config)
 
+        # Resume state
+        self.start_epoch = 0
+
         self.log_dir = Path(self.config['paths']['log_dir'])
         self.log_dir.mkdir(parents=True, exist_ok=True)
         self.metrics_path = self.log_dir / 'metrics.jsonl'
@@ -419,16 +422,51 @@ class MulliVCTrainer:
         return total_losses
     
     def save_checkpoint(self, epoch: int, step: int, is_best: bool = False):
-        """Saves a checkpoint."""
+        """Saves a checkpoint with full training state for resume."""
         checkpoint_dir = self.config['paths']['checkpoint_dir']
         os.makedirs(checkpoint_dir, exist_ok=True)
-        
+
+        checkpoint = {
+            'epoch': epoch,
+            'step': step,
+            'model_state_dict': self.model.state_dict(),
+            'config': self.model.config,
+            'optimizer_g': self.optimizer_g.state_dict(),
+            'optimizer_d': self.optimizer_d.state_dict(),
+            'scheduler_g': self.scheduler_g.state_dict(),
+            'scheduler_d': self.scheduler_d.state_dict(),
+            'scaler_g': self.scaler_g.state_dict(),
+            'scaler_d': self.scaler_d.state_dict(),
+            'best_val_loss': self.best_val_loss,
+            'best_epoch': self.best_epoch,
+        }
+
         checkpoint_path = os.path.join(checkpoint_dir, f'checkpoint_epoch_{epoch}_step_{step}.pt')
-        self.model.save_checkpoint(checkpoint_path, epoch, step)
+        torch.save(checkpoint, checkpoint_path)
         
         if is_best:
             best_path = os.path.join(checkpoint_dir, 'best_model.pt')
-            self.model.save_checkpoint(best_path, epoch, step)
+            torch.save(checkpoint, best_path)
+
+    def resume_from_checkpoint(self, path: str):
+        """Restores full training state from a checkpoint."""
+        checkpoint = torch.load(path, map_location='cpu')
+        self.model.load_state_dict(checkpoint['model_state_dict'])
+        self.start_epoch = checkpoint['epoch'] + 1
+        if 'optimizer_g' in checkpoint:
+            self.optimizer_g.load_state_dict(checkpoint['optimizer_g'])
+            self.optimizer_d.load_state_dict(checkpoint['optimizer_d'])
+        if 'scheduler_g' in checkpoint:
+            self.scheduler_g.load_state_dict(checkpoint['scheduler_g'])
+            self.scheduler_d.load_state_dict(checkpoint['scheduler_d'])
+        if 'scaler_g' in checkpoint:
+            self.scaler_g.load_state_dict(checkpoint['scaler_g'])
+            self.scaler_d.load_state_dict(checkpoint['scaler_d'])
+        if 'best_val_loss' in checkpoint:
+            self.best_val_loss = checkpoint['best_val_loss']
+            self.best_epoch = checkpoint.get('best_epoch')
+        print(f'Resumed from {path} (epoch {checkpoint["epoch"]}, best_val_loss={self.best_val_loss:.4f})')
+        print(f'Will start from epoch {self.start_epoch}')
     
     def train(self):
         """Main training loop."""
@@ -464,7 +502,7 @@ class MulliVCTrainer:
                 validation_batches=val_batches,
             )
 
-            for epoch in range(self.config['training']['num_epochs']):
+            for epoch in range(self.start_epoch, self.config['training']['num_epochs']):
                 train_losses = self.train_epoch(train_dataloader, epoch)
                 val_losses = self.validate(val_dataloader, epoch)
 
@@ -580,9 +618,7 @@ def main():
     
     # Resume from a checkpoint if specified
     if args.resume:
-        checkpoint = torch.load(args.resume, map_location='cpu')
-        trainer.model.load_state_dict(checkpoint['model_state_dict'])
-        print(f'Checkpoint loaded from {args.resume}')
+        trainer.resume_from_checkpoint(args.resume)
     
     # Start training
     trainer.train()

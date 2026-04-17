@@ -310,7 +310,27 @@ cat /tmp/MulliVC/flash_runs/*/logs/progress.json
 
 # Check the latest metrics
 tail -20 /tmp/MulliVC/flash_runs/*/logs/training.log
+```
 
+Download the checkpoints form the worker:
+
+```bash
+# Check if runpodctl is available
+which runpodctl
+
+# Send the best model - it will print a download command
+runpodctl send /tmp/MulliVC/flash_runs/01e1b82c/checkpoints/best_model.pt
+
+# Check what checkpoints exist
+ls -lh /tmp/MulliVC/flash_runs/01e1b82c/checkpoints/
+
+# Download just the best model
+scp -i ~/.ssh/id_ed25519 z3iq8emsof81s1-64412120@ssh.runpod.io:/tmp/MulliVC/flash_runs/01e1b82c/checkpoints/best_model.pt ~/repos/MulliVC/checkpoints/
+scp -i ~/.ssh/runpod/id_ed25519 -P 22 -O z3iq8emsof81s1-64412120@ssh.runpod.io:/tmp/MulliVC/flash_runs/01e1b82c/checkpoints/best_model.pt "C:\Users\jozef\OneDrive - Watchtower\Research\AI\Voice Conversion\MulliVC\checkpoints\"
+
+# Download ALL checkpoints
+scp -i ~/.ssh/id_ed25519 -r z3iq8emsof81s1-64412120@ssh.runpod.io:/tmp/MulliVC/flash_runs/01e1b82c/checkpoints/ ~/repos/MulliVC/checkpoints/
+```
 ---
 
 ## Glossary

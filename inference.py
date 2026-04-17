@@ -17,9 +17,10 @@ from utils.model_utils import get_runtime_device
 class MulliVCInference:
     """Inference pipeline for MulliVC."""
     
-    def __init__(self, config_path: str, checkpoint_path: str):
+    def __init__(self, config_path: str, checkpoint_path: str, force_cpu: bool = False):
         self.config = load_config(config_path)
-        self.device = get_runtime_device()
+        self.device = torch.device('cpu') if force_cpu else get_runtime_device()
+        print(f"Using device: {self.device}")
         
         # Load the model
         self.model = create_mullivc_model(config_path).to(self.device)
@@ -70,9 +71,9 @@ class MulliVCInference:
         source_audio = self.preprocess_audio(source_audio)
         target_speaker_audio = self.preprocess_audio(target_speaker_audio)
         
-        # Add batch dimension
-        source_audio = source_audio.unsqueeze(0)  # (1, samples)
-        target_speaker_audio = target_speaker_audio.unsqueeze(0)  # (1, samples)
+        # Add batch dimension and move to device
+        source_audio = source_audio.unsqueeze(0).to(self.device)  # (1, samples)
+        target_speaker_audio = target_speaker_audio.unsqueeze(0).to(self.device)  # (1, samples)
         
         # Convert
         with torch.no_grad():
@@ -235,11 +236,13 @@ def main():
                        help='Target language')
     parser.add_argument('--evaluate', action='store_true',
                        help='Evaluate conversion quality')
+    parser.add_argument('--cpu', action='store_true',
+                       help='Force CPU inference (useful when local GPU is unsupported)')
     
     args = parser.parse_args()
     
     # Create the inference pipeline
-    inference = MulliVCInference(args.config, args.checkpoint)
+    inference = MulliVCInference(args.config, args.checkpoint, force_cpu=args.cpu)
     
     # Conversion
     if args.source_language != args.target_language:
