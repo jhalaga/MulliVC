@@ -73,7 +73,19 @@ class SpeechBrainHiFiGANVocoder:
             padding = getattr(generator, 'inference_padding', 0)
             if padding > 0:
                 mel_spec = F.pad(mel_spec, (padding, padding), mode='replicate')
-            waveform = generator(mel_spec)
+            # HiFi-GAN activations are very large (upsamples to 22050 Hz).
+            # Chunk along batch to cap peak memory + gradient-checkpoint so
+            # only input mel is retained until backward.
+            if mel_spec.requires_grad:
+                from torch.utils.checkpoint import checkpoint
+                chunk_size = max(1, int(os.environ.get('MULLIVC_VOCODER_CHUNK', '2')))
+                pieces = []
+                for start in range(0, mel_spec.shape[0], chunk_size):
+                    chunk = mel_spec[start:start + chunk_size]
+                    pieces.append(checkpoint(generator, chunk, use_reentrant=False))
+                waveform = torch.cat(pieces, dim=0)
+            else:
+                waveform = generator(mel_spec)
             if mel_lens is not None:
                 waveform = vocoder.mask_noise(waveform, mel_lens, hop_length)
         else:

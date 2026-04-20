@@ -44,13 +44,13 @@ class ReconstructionLoss(nn.Module):
             if target.shape[1] != predicted.shape[1] and target.shape[2] == predicted.shape[1]:
                 target = target.transpose(1, 2)
 
+            # Crop (rather than resample) to the shorter length so we don't
+            # distort either tensor's time axis. Any real length mismatch
+            # should be fixed upstream in the model, not silently hidden here.
             if target.shape[-1] != predicted.shape[-1]:
-                target = F.interpolate(
-                    target,
-                    size=predicted.shape[-1],
-                    mode='linear',
-                    align_corners=False
-                )
+                common_len = min(target.shape[-1], predicted.shape[-1])
+                predicted = predicted[..., :common_len]
+                target = target[..., :common_len]
 
         l1_loss = self.l1_loss(predicted, target)
         l2_loss = self.l2_loss(predicted, target)
@@ -166,51 +166,65 @@ class PitchLoss(nn.Module):
 
 
 class ASRLoss(nn.Module):
-    """ASR loss to enforce content preservation."""
-    
+    """Content-preservation loss via a frozen content encoder (WavLM).
+
+    Compares the content features of the generated waveform against the
+    content features of a reference waveform. This is a much stronger
+    "ASR-style" signal than the old raw-waveform MSE, which was mostly
+    phase noise.
+    """
+
     def __init__(
         self,
         asr_model: Optional[nn.Module] = None,
         weight: float = 1.0
     ):
         super().__init__()
+        # Kept for backward compatibility; an external ASR model is not required.
         self.asr_model = asr_model
         self.weight = weight
-        
-        # If no ASR model is provided, use a simple content loss
-        if asr_model is None:
-            self.content_loss = nn.MSELoss()
-    
+
     def forward(
         self,
         generated_audio: torch.Tensor,
         target_audio: torch.Tensor,
+        content_encoder: Optional[nn.Module] = None,
         target_text: Optional[str] = None
     ) -> torch.Tensor:
-        """
-        Computes ASR loss.
+        """Content-feature L1 loss between generated and target audio.
 
-        Args:
-            generated_audio: Generated audio.
-            target_audio: Target audio.
-            target_text: Optional target text.
-
-        Returns:
-            loss: ASR loss.
+        If no encoder is supplied, this loss is skipped (returns 0). The
+        caller is expected to pass the shared content_encoder so both
+        embeddings live in the same feature space.
         """
         if self.asr_model is not None:
-            # Use the ASR model to extract content features
             with torch.no_grad():
                 target_features = self.asr_model.extract_features(target_audio)
-            
             generated_features = self.asr_model.extract_features(generated_audio)
-            
-            # Content loss
-            loss = F.mse_loss(generated_features, target_features)
-        else:
-            # Simple content loss
-            loss = self.content_loss(generated_audio, target_audio)
-        
+            loss = F.l1_loss(generated_features, target_features)
+            return self.weight * loss
+
+        if content_encoder is None:
+            return torch.tensor(0.0, device=generated_audio.device)
+
+        # Length-match: ensure both waveforms have the same number of samples
+        # so frame counts align after the encoder.
+        min_len = min(generated_audio.shape[-1], target_audio.shape[-1])
+        gen = generated_audio[..., :min_len]
+        tgt = target_audio[..., :min_len]
+
+        with torch.no_grad():
+            target_features, _ = content_encoder(tgt)
+
+        generated_features, _ = content_encoder(gen)
+
+        # Crop to shortest frame axis (encoders may produce slightly
+        # different counts on tiny length drift).
+        common_frames = min(generated_features.shape[1], target_features.shape[1])
+        loss = F.l1_loss(
+            generated_features[:, :common_frames],
+            target_features[:, :common_frames],
+        )
         return self.weight * loss
 
 
@@ -440,7 +454,8 @@ class CombinedLoss(nn.Module):
         discriminator_output: torch.Tensor,
         is_real: bool = True,
         generated_audio: Optional[torch.Tensor] = None,
-        target_audio: Optional[torch.Tensor] = None
+        target_audio: Optional[torch.Tensor] = None,
+        content_encoder: Optional[nn.Module] = None,
     ) -> Dict[str, torch.Tensor]:
         """
         Computes all combined losses.
@@ -478,9 +493,11 @@ class CombinedLoss(nn.Module):
             discriminator_output, is_real
         )
         
-        # ASR loss if audio is provided
+        # ASR / content-preservation loss via the shared content encoder.
         if generated_audio is not None and target_audio is not None:
-            losses['asr'] = self.asr_loss(generated_audio, target_audio)
+            losses['asr'] = self.asr_loss(
+                generated_audio, target_audio, content_encoder=content_encoder
+            )
         else:
             losses['asr'] = torch.tensor(0.0, device=predicted_mel.device)
         

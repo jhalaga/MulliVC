@@ -3,6 +3,7 @@ Content Encoder based on WavLM for extracting linguistic content features.
 """
 import torch
 import torch.nn as nn
+import torchaudio
 from transformers import WavLMModel, WavLMConfig
 from typing import Optional, Tuple
 
@@ -18,7 +19,9 @@ class ContentEncoder(nn.Module):
         model_name: str = "microsoft/wavlm-base",
         hidden_size: int = 768,
         output_dim: int = 256,
-        freeze_backbone: bool = False
+        freeze_backbone: bool = False,
+        input_sample_rate: int = 22050,
+        target_sample_rate: int = 16000
     ):
         super().__init__()
         
@@ -26,6 +29,9 @@ class ContentEncoder(nn.Module):
         self.hidden_size = hidden_size
         self.output_dim = output_dim
         self.freeze_backbone = freeze_backbone
+        self.input_sample_rate = input_sample_rate
+        self.target_sample_rate = target_sample_rate
+        self._needs_resample = input_sample_rate != target_sample_rate
         
         # Load the pretrained WavLM model
         self.wavlm = WavLMModel.from_pretrained(model_name)
@@ -53,6 +59,22 @@ class ContentEncoder(nn.Module):
         
         # Normalization to stabilize training
         self.layer_norm = nn.LayerNorm(output_dim)
+
+    def _resample_if_needed(self, audio: torch.Tensor) -> torch.Tensor:
+        """Resamples audio to the sample rate WavLM was trained on (16 kHz)."""
+        if not self._needs_resample:
+            return audio
+        original_dim = audio.dim()
+        if original_dim == 1:
+            audio = audio.unsqueeze(0)
+        audio = torchaudio.functional.resample(
+            audio,
+            orig_freq=self.input_sample_rate,
+            new_freq=self.target_sample_rate
+        )
+        if original_dim == 1:
+            audio = audio.squeeze(0)
+        return audio
     
     def forward(
         self, 
@@ -71,6 +93,7 @@ class ContentEncoder(nn.Module):
             pooled_features: Tensor of shape (batch_size, output_dim).
         """
         # Extract features with WavLM
+        audio = self._resample_if_needed(audio)
         outputs = self.wavlm(
             input_values=audio,
             attention_mask=attention_mask,

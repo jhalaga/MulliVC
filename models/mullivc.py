@@ -34,7 +34,9 @@ class MulliVC(nn.Module):
         self.content_encoder = ContentEncoder(
             model_name=config['model']['content_encoder']['model_name'],
             hidden_size=config['model']['content_encoder']['hidden_size'],
-            output_dim=config['model']['content_encoder']['output_dim']
+            output_dim=config['model']['content_encoder']['output_dim'],
+            input_sample_rate=config['data']['sample_rate'],
+            target_sample_rate=16000
         )
         
         self.timbre_encoder = TimbreEncoder(
@@ -96,7 +98,24 @@ class MulliVC(nn.Module):
 
         # Encode source audio content
         content_features, content_pooled = self.content_encoder(source_audio)
-        
+
+        # Upsample content features from WavLM's ~50 fps to the mel-spectrogram
+        # frame rate (sample_rate / hop_length). Without this, the generated mel
+        # is time-compressed by a factor of (WavLM_fps / mel_fps), producing
+        # audio that is roughly 0.58x the source length at sample_rate=22050,
+        # hop_length=256.
+        hop_length = self.audio_processor.hop_length
+        audio_samples = source_audio.shape[-1]
+        # torchaudio.MelSpectrogram with center=True (default) produces this many frames:
+        expected_mel_len = audio_samples // hop_length + 1
+        if content_features.shape[1] != expected_mel_len:
+            content_features = torch.nn.functional.interpolate(
+                content_features.transpose(1, 2),
+                size=expected_mel_len,
+                mode='linear',
+                align_corners=False,
+            ).transpose(1, 2)
+
         # Encode target audio timbre
         if target_timbre_mel is not None:
             timbre_features = self.timbre_encoder.extract_timbre_features(target_timbre_mel)
@@ -173,9 +192,10 @@ class MulliVC(nn.Module):
             discriminator_output=outputs['discriminator_output'],
             is_real=is_real,
             generated_audio=outputs.get('generated_audio'),
-            target_audio=targets.get('target_audio')
+            target_audio=targets.get('target_audio'),
+            content_encoder=self.content_encoder,
         )
-        
+
         return losses
     
     def training_step(
@@ -213,74 +233,104 @@ class MulliVC(nn.Module):
         # Use the same speaker for content and timbre
         source_audio = batch['audio']
         target_audio = batch['audio']  # Same audio
-        
+
         # Forward pass
         outputs = self.forward(source_audio, target_audio)
-        
-        # Targets for reconstruction
+        # NOTE: do NOT run HiFi-GAN with grad in stage 1. Since target_audio
+        # == source_audio, the mel reconstruction loss already supervises
+        # content preservation 1:1; the ASR / content-preservation loss is
+        # redundant here but would cost a large HiFi-GAN backward pass.
+
+        # Targets for reconstruction.
+        # target_timbre uses the timbre_encoder's own embedding of the source
+        # (detached) so predicted global_timbre -- which has been through the
+        # conformer -- is pulled back toward the raw speaker embedding rather
+        # than being self-referential to its own graph.
         targets = {
             'target_mel': self._audio_to_mel(target_audio),
-            'target_timbre': outputs['timbre_features']
+            'target_timbre': outputs['timbre_features'].detach(),
+            # No target_audio: ASR loss is skipped in stage 1.
         }
-        
+
         # Compute losses
         losses = self.compute_losses(outputs, targets, is_real=True)
-        
+
         return losses
     
     def _training_step_2(self, batch: Dict[str, torch.Tensor]) -> Dict[str, torch.Tensor]:
-        """Stage 2: Simulated cross conversion."""
-        # Use different speakers
+        """Stage 2: Simulated cross conversion.
+
+        The generator is given the *source* content but a *different* speaker
+        timbre. The training target is the *source* mel (content X, speaker A)
+        because we cannot supervise "speaker B saying X" without ground truth.
+        This teaches the model to preserve content when timbre input varies,
+        while adversarial / timbre losses push the generator's global timbre
+        toward the supplied target speaker.
+        """
         source_audio = batch['audio']
-        # Simulate audio from a different speaker
-        target_timbre_audio = torch.roll(source_audio, 1, dims=0)  # Simple simulation
-        
-        # Forward pass
+        # Simulate audio from a different speaker (paired within the batch)
+        target_timbre_audio = torch.roll(source_audio, 1, dims=0)
+
+        # Forward pass with source content + target speaker timbre input
         outputs = self.forward(source_audio, target_timbre_audio)
         outputs['generated_audio'] = self._mel_to_audio(
             outputs['generated_mel'],
             allow_grad=True
         )
-        
-        # Targets for conversion
+
+        # Target: reconstruct SOURCE (content X, speaker A).
+        # Target timbre: the target speaker's embedding, so the model learns
+        # to consume the provided timbre signal.
+        target_timbre_mel = self._audio_to_mel(target_timbre_audio)
+        target_speaker_timbre = self.timbre_encoder.extract_timbre_features(target_timbre_mel).detach()
         targets = {
-            'target_mel': self._audio_to_mel(target_timbre_audio),
-            'target_timbre': outputs['timbre_features']
+            'target_mel': self._audio_to_mel(source_audio),
+            'target_timbre': target_speaker_timbre,
+            # Content of generated should still match source content.
+            'target_audio': source_audio,
         }
-        
-        # Compute losses
+
         losses = self.compute_losses(outputs, targets, is_real=True)
-        
+
         return losses
     
     def _training_step_3(self, batch: Dict[str, torch.Tensor]) -> Dict[str, torch.Tensor]:
-        """Stage 3: Cycle consistency."""
-        # Use the audio generated in stage 2
+        """Stage 3: Cycle consistency (A -> B -> A should recover A)."""
         source_audio = batch['audio']
         target_timbre_audio = torch.roll(source_audio, 1, dims=0)
-        
-        # Forward pass
+
+        # Forward pass 1: source content + target timbre.
+        # We need a waveform to feed back into the cycle, but we detach it
+        # so gradients do not propagate through the first HiFi-GAN pass.
+        # The content-preservation loss is delivered by stage 2 on this
+        # same pairing.
         outputs = self.forward(source_audio, target_timbre_audio)
-        generated_audio = self._mel_to_audio(
-            outputs['generated_mel'],
-            allow_grad=True
-        )
-        
-        # Cycle reconstruction
+        with torch.no_grad():
+            generated_audio = self._mel_to_audio(
+                outputs['generated_mel'],
+                allow_grad=False
+            )
+
+        # Forward pass 2: cycle back using source as the timbre reference.
+        # Mel-level reconstruction against source_mel trains the cycle; we do
+        # NOT run HiFi-GAN with grad on the cycle output -- that would
+        # quadruple per-step cost for marginal benefit.
         reconstructed_outputs = self.forward(
             generated_audio,
             source_audio
         )
-        
-        # Targets for cycle consistency
+
+        # Cycle target: reconstruct the source; matching timbre is source speaker's
+        source_mel = self._audio_to_mel(source_audio)
+        source_speaker_timbre = self.timbre_encoder.extract_timbre_features(source_mel).detach()
         targets = {
-            'target_mel': self._audio_to_mel(source_audio),
-            'target_timbre': outputs['timbre_features']
+            'target_mel': source_mel,
+            'target_timbre': source_speaker_timbre,
+            # No target_audio: ASR loss is skipped in cycle stage.
         }
-        
-        # Compute losses
+
         losses = self.compute_losses(reconstructed_outputs, targets, is_real=True)
-        
+
         return losses
     
     def inference(

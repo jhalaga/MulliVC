@@ -1,51 +1,51 @@
 {
-  "batch_size": 2,
-  "best_epoch": 5,
-  "best_val_loss": 5.966558401584625,
-  "completed_epochs": 6,
-  "config_path": "/tmp/MulliVC/flash_runs/01e1b82c/flash_config.yaml",
-  "current_batch": 5501,
-  "current_epoch": 6,
+  "batch_size": 8,
+  "best_epoch": 3,
+  "best_val_loss": 1.9930922305211425,
+  "completed_epochs": 14,
+  "config_path": "/runpod-volume/mullivc_flash_runs/v10_20260417_2041/flash_config.yaml",
+  "current_batch": 1426,
+  "current_epoch": 14,
   "device": "cuda",
-  "epoch_batches": 7000,
+  "epoch_batches": 2066,
   "last_train_losses": {
-    "adversarial": 2.126827822730656,
+    "adversarial": 2.0307852741055528,
     "asr": 0.0,
     "pitch": 0.0,
-    "reconstruction": 3.7323758033627645,
-    "timbre": 0.020277597294676878,
-    "total": 5.879481223174522
+    "reconstruction": 1.1536617264242952,
+    "timbre": 2.966723872156506e-05,
+    "total": 3.1844766664674258
   },
   "last_validation_losses": {
-    "adversarial": 1.4413232421875,
+    "adversarial": 1.0061225891113281,
     "asr": 0.0,
     "pitch": 0.0,
-    "reconstruction": 4.507860649824142,
-    "timbre": 0.017374522984027863,
-    "total": 5.966558401584625
+    "reconstruction": 1.5521744498983026,
+    "timbre": -3.972739796154201e-05,
+    "total": 2.55825730971992
   },
-  "latest_checkpoint": "/tmp/MulliVC/flash_runs/01e1b82c/checkpoints/checkpoint_epoch_5_step_0.pt",
+  "latest_checkpoint": "/runpod-volume/mullivc_flash_runs/v10_20260417_2041/checkpoints/checkpoint_epoch_13_step_0.pt",
   "latest_discriminator_losses": {
-    "adversarial": 0.9658203125,
-    "total": 0.9658203125
+    "adversarial": 0.951171875,
+    "total": 0.951171875
   },
   "latest_generator_losses": {
-    "adversarial": 1.1647135416666667,
+    "adversarial": 0.9685872395833333,
     "asr": 0.0,
     "perceptual": 0.0,
     "pitch": 0.0,
-    "reconstruction": 2.6736392180124917,
-    "timbre": 0.007669384280840555,
-    "total": 3.8460222085316973
+    "reconstruction": 1.0827197631200154,
+    "timbre": 2.3932506640752152e-05,
+    "total": 2.0513309637705484
   },
   "num_epochs": 30,
   "phase": "train",
   "status": "training",
-  "steps_per_epoch": 7000,
-  "train_batches": null,
-  "train_dataset_mode": "streaming-iterable",
-  "updated_at": "2026-04-16T09:28:01.636824+00:00",
-  "validation_batches": 1024,
+  "steps_per_epoch": 3750,
+  "train_batches": 2066,
+  "train_dataset_mode": "streaming-materialized",
+  "updated_at": "2026-04-18T18:41:39.775790+00:00",
+  "validation_batches": 128,
   "validation_dataset_mode": "streaming-materialized",
-  "validation_steps": 200
+  "validation_steps": 128
 }

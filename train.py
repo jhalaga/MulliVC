@@ -29,7 +29,18 @@ class MulliVCTrainer:
         self.config = load_config(config_path)
         self._apply_overrides(overrides or {})
         self.device = get_runtime_device()
-        
+
+        # Enable TF32 for matmul/conv on Ampere+ (A100/H100/H200) for a big
+        # speedup on fp32 paths with negligible accuracy impact.
+        if torch.cuda.is_available():
+            torch.backends.cuda.matmul.allow_tf32 = True
+            torch.backends.cudnn.allow_tf32 = True
+            torch.backends.cudnn.benchmark = True
+            try:
+                torch.set_float32_matmul_precision('high')
+            except Exception:
+                pass
+
         # Initialize the model
         self.model = create_mullivc_model(config_path).to(self.device)
         
@@ -68,8 +79,17 @@ class MulliVCTrainer:
 
         # AMP (mixed precision) support
         self.use_amp = self.config['training'].get('amp', False)
-        self.scaler_g = GradScaler(enabled=self.use_amp)
-        self.scaler_d = GradScaler(enabled=self.use_amp)
+        amp_dtype_str = str(self.config['training'].get('amp_dtype', 'float16')).lower()
+        if amp_dtype_str in ('bfloat16', 'bf16'):
+            self.amp_dtype = torch.bfloat16
+        elif amp_dtype_str in ('float16', 'fp16', 'half'):
+            self.amp_dtype = torch.float16
+        else:
+            self.amp_dtype = torch.float16
+        # GradScaler is only needed for float16 (bfloat16 has fp32 dynamic range).
+        scaler_enabled = self.use_amp and self.amp_dtype == torch.float16
+        self.scaler_g = GradScaler(enabled=scaler_enabled)
+        self.scaler_d = GradScaler(enabled=scaler_enabled)
         self.grad_clip_norm = self.config['training'].get('gradient_clip_norm', 0.0)
         
         # Audio processor
@@ -226,7 +246,7 @@ class MulliVCTrainer:
 
                 accumulated_losses_g: Dict[str, float] = {}
                 for stage_fn in stage_funcs:
-                    with autocast('cuda', enabled=self.use_amp):
+                    with autocast('cuda', enabled=self.use_amp, dtype=self.amp_dtype):
                         stage_losses = stage_fn(batch)
                     self.scaler_g.scale(stage_losses['total'] / num_stages).backward()
                     for k, v in stage_losses.items():
@@ -248,7 +268,7 @@ class MulliVCTrainer:
                 
                 # Train the discriminator
                 self.optimizer_d.zero_grad()
-                with autocast('cuda', enabled=self.use_amp):
+                with autocast('cuda', enabled=self.use_amp, dtype=self.amp_dtype):
                     losses_d = self._train_discriminator(batch)
                 self.scaler_d.scale(losses_d['total']).backward()
                 if self.grad_clip_norm > 0:
@@ -289,6 +309,12 @@ class MulliVCTrainer:
                         latest_generator_losses=self._losses_to_scalars(losses_g),
                         latest_discriminator_losses=self._losses_to_scalars(losses_d),
                     )
+
+                # Mid-epoch checkpoint every N steps so an OOM / crash late
+                # in the epoch doesn't discard all in-progress training.
+                mid_epoch_interval = int(self.config['training'].get('mid_epoch_save_interval', 0))
+                if mid_epoch_interval > 0 and (batch_idx + 1) % mid_epoch_interval == 0:
+                    self.save_checkpoint(epoch, batch_idx + 1, is_best=False)
         
         # Average losses
         for key in total_losses:
@@ -389,7 +415,7 @@ class MulliVCTrainer:
                         for k, v in batch.items()}
                 
                 # Forward pass
-                with autocast('cuda', enabled=self.use_amp):
+                with autocast('cuda', enabled=self.use_amp, dtype=self.amp_dtype):
                     outputs = self.model.forward(batch['audio'], batch['audio'])
                 
                 # Targets

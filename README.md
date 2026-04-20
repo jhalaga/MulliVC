@@ -184,7 +184,7 @@ python train.py --config configs/mullivc_config.yaml
 python inference.py --checkpoint checkpoints/best_model.pt --source_audio source.wav --target_speaker_audio target.wav --output converted.wav
 
 python3 inference.py \
-  --checkpoint checkpoints/checkpoint_epoch_12_step_0.pt \
+  --checkpoint checkpoints/checkpoint_epoch_2_step_0.pt \
   --source_audio data/test_samples/source.wav \
   --target_speaker_audio data/test_samples/target_speaker.wav \
   --cpu
@@ -199,6 +199,13 @@ The system supports Weights & Biases for monitoring:
 wandb:
   enabled: true
   project: "mullivc"
+```
+
+Monitor on Runpod:
+
+```bash
+tail -f /runpod-volume/mullivc_flash_runs/v10_20260417_2041/logs/training.log
+cat  /runpod-volume/mullivc_flash_runs/v10_20260417_2041/logs/progress.json
 ```
 
 ## 🤝 Contributing

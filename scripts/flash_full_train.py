@@ -11,6 +11,7 @@ import shlex
 import uuid
 
 from runpod_flash import Endpoint, GpuGroup
+from runpod_flash.core.resources.network_volume import NetworkVolume, DataCenter
 import runpod.endpoint.runner as _rp_runner
 
 # Increase HTTP read timeout from 10s to 60s to survive Runpod API slowness.
@@ -45,6 +46,7 @@ FORWARDED_ENV = {
 def _synced_repo_files() -> dict[str, str]:
     return {
         "train.py": (PROJECT_ROOT / "train.py").read_text(),
+        "models/content_encoder.py": (PROJECT_ROOT / "models" / "content_encoder.py").read_text(),
         "models/discriminator.py": (PROJECT_ROOT / "models" / "discriminator.py").read_text(),
         "models/losses.py": (PROJECT_ROOT / "models" / "losses.py").read_text(),
         "models/mullivc.py": (PROJECT_ROOT / "models" / "mullivc.py").read_text(),
@@ -56,13 +58,25 @@ def _synced_repo_files() -> dict[str, str]:
 
 
 @Endpoint(
-    name="mullivc-full-train-v9",
-    gpu=GpuGroup.ADA_80_PRO,
-    workers=(0, 1),
+    name="mullivc-full-train-v13",
+    # Require >=80 GB VRAM. L40S (48 GB) OOM'd on the attention T^2 matrix
+    # at batch_size=16 in v12.
+    gpu=[
+        GpuGroup.HOPPER_141,     # H200 141 GB
+        GpuGroup.BLACKWELL_180,  # B200 180 GB
+        GpuGroup.BLACKWELL_96,   # RTX PRO 6000 Blackwell 96 GB
+        GpuGroup.AMPERE_80,      # A100 80 GB
+        GpuGroup.ADA_80_PRO,     # L40S PRO 80 GB tier
+    ],
+    # Keep 1 worker permanently alive so the job is not terminated when the
+    # platform scales down idle flex workers mid-run.
+    workers=(1, 1),
     idle_timeout=900,
     dependencies=TRAINING_REQUIREMENTS,
     env=FORWARDED_ENV,
     execution_timeout_ms=604_800_000,
+    volume=NetworkVolume(id="n9r4ol0ioh", dataCenterId=DataCenter.US_NC_1),
+    datacenter=DataCenter.US_NC_1,
 )
 async def run_mullivc_full_train(request: dict | None = None) -> dict:
     """Execute a production-oriented MulliVC training run on a Flash GPU worker."""

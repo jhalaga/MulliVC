@@ -11,8 +11,11 @@ data:
     - male
   fongbe_train_split: "train"
   fongbe_validation_split: "test"
-  max_train_samples: null
-  max_validation_samples: 2048
+  # Pre-download 30k samples once into memory at train startup to eliminate
+  # any network bottleneck during training. Divided across 3 sources ~= 10k
+  # libritts + all available fongbe male/female, giving a balanced bilingual pool.
+  max_train_samples: 30000
+  max_validation_samples: 1024
 
   sample_rate: 22050
   hop_length: 256
@@ -21,11 +24,18 @@ data:
   mel_fmin: 0
   mel_fmax: 8000
 
-  max_audio_length: 10.0
+  # Shortening to 5 s clips + bs=8 is the configuration verified to fit on
+  # H200 (~35 GB peak) with cycle consistency + ASR content-preservation
+  # loss enabled. Voice conversion learns per-frame timbre->mel mapping so
+  # long temporal context adds cost without quality.
+  max_audio_length: 5.0
   min_audio_length: 1.0
 
-  batch_size: 2
-  num_workers: 0
+  # With only Stage 2 running HiFi-GAN with grad and max_audio_length=5s,
+  # bs=8 uses ~35 GB steady-state on H200. bs=16 OOMs at backward recompute
+  # due to fragmentation.
+  batch_size: 8
+  num_workers: 4
   pin_memory: true
 
 vocoder:
@@ -75,14 +85,22 @@ training:
   lambda_adv: 1.0
   lambda_rec: 1.0
   lambda_timbre: 0.5
-  lambda_pitch: 1.0
+  # Pitch loss disabled: the model has no pitch head, so there is no
+  # predicted_pitch to supervise. Re-enable once a pitch predictor is added.
+  lambda_pitch: 0.0
   lambda_asr: 0.5
   gan_mode: "hinge"
 
-  num_epochs: 30
-  steps_per_epoch: 7000
-  validation_steps: 200
+  # v10 ran 30 epochs; G_Loss converged ~ epoch 10. With the fixed losses
+  # (ASR content-preservation, timbre, pitch all active), 10 epochs at
+  # 1500 steps each is the budget target: ~25-30 h wall clock on H200.
+  num_epochs: 10
+  steps_per_epoch: 1500
+  validation_steps: 64
   save_interval: 1
+  # Save a checkpoint every N training steps so an OOM/crash late in an
+  # epoch doesn't lose hours of progress.
+  mid_epoch_save_interval: 500
   log_interval: 25
   enable_cycle_consistency: true
 
@@ -90,6 +108,7 @@ training:
   warmup_steps: 1000
   gradient_clip_norm: 1.0
   amp: true
+  amp_dtype: "bfloat16"
 
 paths:
   checkpoint_dir: "checkpoints"

@@ -42,13 +42,12 @@ class MulliVCInference:
         return self.audio_processor.load_audio(audio_path)
     
     def preprocess_audio(self, audio: torch.Tensor) -> torch.Tensor:
-        """Preprocesses audio."""
-        # Normalize
+        """Preprocesses audio.
+
+        Uses the exact same normalization as training (peak normalization only)
+        to avoid train/inference distribution drift.
+        """
         audio = audio / (torch.abs(audio).max() + 1e-8)
-        
-        # Trim silence
-        audio = self.audio_processor._trim_silence(audio)
-        
         return audio
     
     def convert_voice(
